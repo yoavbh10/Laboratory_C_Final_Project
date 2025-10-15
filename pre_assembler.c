@@ -86,14 +86,27 @@ static int macro_index_by_name(const char *name) {
     return -1;
 }
 
-/* derive "<src>.amx" */
+/* Build "<base>.amx": strip the last extension (if any) before adding ".amx" */
 static void make_out_path(const char *src, char *out, size_t out_sz) {
-    size_t n = strlen(src);
+    const char *base = src, *p = src, *dot = NULL, *slash = NULL;
+    size_t len;
+
     if (out_sz == 0) return;
-    if (n + 5 >= out_sz) n = out_sz - 5; /* leave space for ".amx" and NUL */
-    memcpy(out, src, n);
-    out[n] = '\0';
-    strcat(out, ".amx");
+
+    /* find last path separator and last dot after it */
+    while (*p) { if (*p=='/' || *p=='\\') slash = p; p++; }
+    if (slash) base = slash + 1;
+    for (p = base; *p; ++p) if (*p == '.') dot = p;
+
+    /* length of stem without extension */
+    len = dot ? (size_t)(dot - base) : strlen(base);
+    if (len >= out_sz) len = out_sz - 1;
+
+    memcpy(out, base, len);
+    out[len] = '\0';
+
+    /* append ".amx" if room */
+    if (strlen(out) + 4 < out_sz) strcat(out, ".amx");
 }
 
 /* -------- parsing & expansion -------- */

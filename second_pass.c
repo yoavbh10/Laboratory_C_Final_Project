@@ -1,84 +1,100 @@
-#include <stdio.h>
+/* second_pass.c — ANSI C (C90)
+   Pass 2: encode code image from the expanded file, resolve label fixups,
+   record extern uses, and write output files.
+*/
 #include <string.h>
+#include <stdio.h>
 
 #include "second_pass.h"
-#include "first_pass.h"
-#include "instruction_encoder.h"
 #include "symbol_table.h"
 #include "memory_image.h"
 #include "error_list.h"
 #include "output_files.h"
+#include "instruction_encoder.h"
 
+/* Fallback ARE codes if not visible via other headers */
+#ifndef ARE_A
+#define ARE_A 0
+#endif
+#ifndef ARE_E
+#define ARE_E 1
+#endif
+#ifndef ARE_R
+#define ARE_R 2
+#endif
+
+/* Logical base address for code */
+#ifndef LOGICAL_BASE
 #define LOGICAL_BASE 100
-enum { ARE_A = 0, ARE_E = 1, ARE_R = 2 };
+#endif
 
-/* Pack a value into [9..2] with ARE in [1..0] (ANSI C) */
-static int pack_value_word_fixup(int value, int are){
-    return ((value & 0xFF) << 2) | (are & 0x3);
-}
-
-int second_pass(const char *filename, Symbol **symbols,
-                MemoryImage *mem, ErrorList *errors)
+int second_pass(const char *filename, Symbol **symbols, MemoryImage *mem, ErrorList *errors)
 {
     FILE *fp;
-    char line[MAX_LINE_LENGTH+4];
-    int line_num = 0;
-    int i;
-    char msg[128];
+    char linebuf[1024];
+    int line_no = 0;
+    int had_errors = 0;
+    int k;
 
-    /* per-run init */
-    init_memory_image(mem);   /* IC/DC as counts */
-	of_reset();               /* clear extern-use list */
+    if (!filename || !symbols || !*symbols || !mem || !errors) return 0;
 
-    /* Run pass 1: build symbols + data, compute IC as word count */
-    if (!first_pass(filename, symbols, mem, errors)) {
-        add_error(errors, 0, "First pass failed");
-        return 0;
-    }
+    /* fresh extern-use list */
+    of_init();
 
-    /* Now encode code words from source */
+    /* Rebuild the code image from the expanded file: reset IC and fixups */
+    mem->IC = 0;
+    mem->fixup_count = 0;
+
     fp = fopen(filename, "r");
     if (!fp) {
-        add_error(errors, 0, "Failed to open file for second pass");
+        char msg[256];
+        sprintf(msg, "cannot open source '%s'", filename);
+        add_error(errors, 0, msg);
         return 0;
     }
 
-    mem->IC = 0;               /* rebuild code image from scratch */
-    mem->fixup_count = 0;
-    memset(mem->code, 0, sizeof(mem->code));
-
-    while (fgets(line, sizeof(line), fp)) {
-        line_num++;
-        encode_instruction(line, *symbols, mem, errors, line_num);
+    /* Encode instructions & collect fixups (data directives are ignored here) */
+    while (fgets(linebuf, sizeof(linebuf), fp)) {
+        line_no++;
+        /* encode_instruction appends code words & fixups; reports errors via errors */
+        (void)encode_instruction(linebuf, *symbols, mem, errors, line_no);
     }
     fclose(fp);
 
-    /* Resolve fixups: patch code words with real addresses, record extern uses */
-    for (i = 0; i < mem->fixup_count; i++) {
-        Fixup *fx = &mem->fixups[i];
-        Symbol *sym = find_symbol(*symbols, fx->label);
+    /* Resolve all recorded fixups (label references) */
+    for (k = 0; k < mem->fixup_count; ++k) {
+        Fixup *fx = &mem->fixups[k];
+        const Symbol *sym = find_symbol(*symbols, fx->label);
+        int are_bits;
+        int idx;
+
         if (!sym) {
+            char msg[256];
             sprintf(msg, "Undefined label: %s", fx->label);
             add_error(errors, fx->line, msg);
+            had_errors = 1;
+            continue;
+        }
+
+        if (sym->is_extern) {
+            are_bits = ARE_E;               /* external reference */
+            of_record_extern_use(sym->name, fx->address);
         } else {
-            int idx = fx->address - LOGICAL_BASE; /* fixup address is logical */
-            if (idx >= 0 && idx < MAX_CODE_SIZE) {
-                int are = sym->is_extern ? ARE_E : ARE_R;
-                mem->code[idx] = pack_value_word_fixup(sym->address, are);
-                if (sym->is_extern) {
-                    /* For .ext: record each use occurrence */
-                    of_record_extern_use(sym->name, fx->address);
-                }
-            } else {
-                sprintf(msg, "Patch address out of range for label: %s", fx->label);
-                add_error(errors, fx->line, msg);
-            }
+            are_bits = ARE_R;               /* relocatable */
+        }
+
+        /* Patch the word in the code image at absolute address fx->address */
+        idx = fx->address - LOGICAL_BASE;
+        if (idx >= 0 && idx < MAX_CODE_SIZE) {
+            int value10 = sym->address & 0x3FF;   /* 10-bit payload */
+            mem->code[idx] = (value10 & ~0x3) | (are_bits & 0x3);
         }
     }
 
-    /* Finally, write output files (.ob / .ent / .ext) */
-    write_output_files(filename, mem, *symbols);
+    if (had_errors) return 0;
 
+    /* Emit output files (.ob/.ent/.ext) now that fixups are resolved */
+    write_output_files(filename, mem, *symbols);
     return 1;
 }
 

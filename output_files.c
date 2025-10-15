@@ -1,139 +1,171 @@
 #include "output_files.h"
-#include "memory_image.h"
-#include "symbol_table.h"
 #include <stdio.h>
 #include <string.h>
 
-/* ===== simple store for extern uses collected during fixups ===== */
+/* ---- extern-use collector ---------------------------------------------- */
+
 typedef struct {
     char name[MAX_LABEL_LEN];
-    int  addr; /* logical code address of the use site */
+    int  address;                 /* absolute address (decimal) */
 } ExtUse;
 
-#define MAX_EXT_USES 512
+#define MAX_EXT_USES 1024
+
 static ExtUse g_ext_uses[MAX_EXT_USES];
 static int    g_ext_use_count = 0;
 
-void of_reset(void) {
+void of_init(void)
+{
     g_ext_use_count = 0;
 }
 
-void of_record_extern_use(const char *name, int addr) {
-    if (!name || !*name) return;
+void of_record_extern_use(const char *name, int use_address)
+{
+    if (!name) return;
     if (g_ext_use_count >= MAX_EXT_USES) return;
     strncpy(g_ext_uses[g_ext_use_count].name, name, MAX_LABEL_LEN - 1);
     g_ext_uses[g_ext_use_count].name[MAX_LABEL_LEN - 1] = '\0';
-    g_ext_uses[g_ext_use_count].addr = addr;
+    g_ext_uses[g_ext_use_count].address = use_address;
     g_ext_use_count++;
 }
 
-/* ===== helpers ===== */
+/* ---- base-4 "abcd" helpers --------------------------------------------- */
 
-/* derive a basename from input path and strip .amx and/or .am suffixes */
-static void derive_base(const char *in, char *base, size_t n) {
-    const char *p = in, *start = in;
+static void to_base4_letters(unsigned int n, int width, char *out)
+{
+    static const char digits[4] = {'a','b','c','d'};
+    int i;
+    for (i = width - 1; i >= 0; --i) {
+        out[i] = digits[n & 3u];
+        n >>= 2;
+    }
+    out[width] = '\0';
+}
+
+static void addr_to_b4(int addr, char *out4)
+{
+    unsigned int v = (unsigned int)(addr & 0xFF); /* 0..255 */
+    to_base4_letters(v, 4, out4);
+}
+
+static void word_to_b4(int word, char *out5)
+{
+    unsigned int v = (unsigned int)(word & 0x3FF); /* 10-bit word */
+    to_base4_letters(v, 5, out5);
+}
+
+/* ---- path helper -------------------------------------------------------- */
+
+static void derive_base_name(const char *src_filename, char *dst, size_t dstsz)
+{
+    const char *last_slash = NULL, *p = src_filename, *dot = NULL;
     size_t len;
 
-    if (n == 0) return;
-    base[0] = '\0';
+    while (*p) { if (*p == '/' || *p == '\\') last_slash = p; p++; }
+    if (last_slash) src_filename = last_slash + 1;
 
-    /* strip directory part */
-    while (*p) {
-        if (*p == '/' || *p == '\\') start = p + 1;
-        p++;
-    }
-    strncpy(base, start, n - 1);
-    base[n - 1] = '\0';
+    for (p = src_filename; *p; ++p) if (*p == '.') dot = p;
 
-    /* strip suffixes in sequence: first .amx, then .am if still present */
-    len = strlen(base);
-    if (len >= 4 && strcmp(base + len - 4, ".amx") == 0) {
-        base[len - 4] = '\0';
-        len -= 4;
-    }
-    if (len >= 3 && strcmp(base + len - 3, ".am") == 0) {
-        base[len - 3] = '\0';
-    }
+    if (dot && dot > src_filename) len = (size_t)(dot - src_filename);
+    else                           len = strlen(src_filename);
+
+    if (len >= dstsz) len = dstsz - 1;
+    memcpy(dst, src_filename, len);
+    dst[len] = '\0';
 }
 
-/* write a 10-bit word as unsigned decimal (mask to 10 bits) */
-static void fprint_word10(FILE *f, int w) {
-    int v = w & 0x3FF;
-    fprintf(f, "%d\n", v);
-}
+/* ---- writers ------------------------------------------------------------ */
 
-/* ===== public API ===== */
-
-void write_output_files(const char *input_filename,
+void write_output_files(const char *src_filename,
                         const MemoryImage *mem,
                         const Symbol *symbols)
 {
-    char base[512];
-    char path_ob[600], path_ent[600], path_ext[600];
-    FILE *fob, *f;
-    const Symbol *s;
-    int i;
+    char base[256];
+    char path_ob[300], path_ent[300], path_ext[300];
+    FILE *fob, *fent, *fext;
+    int i, wrote_ent = 0, wrote_ext = 0;
+    int code_size, data_size;
 
-    if (!input_filename || !*input_filename || !mem) return;
+    if (!src_filename || !mem) return;
 
-    /* base name without .am/.amx */
-    derive_base(input_filename, base, sizeof(base));
+    derive_base_name(src_filename, base, sizeof(base));
 
-    /* compose paths */
+    /* Build paths (ANSI C: use sprintf) */
     sprintf(path_ob,  "%s.ob",  base);
     sprintf(path_ent, "%s.ent", base);
     sprintf(path_ext, "%s.ext", base);
 
-    /* ---- .ob ---- */
+    /* Sizes */
+    code_size = mem->IC;
+    if (code_size < 0) code_size = 0;
+    if (code_size > MAX_CODE_SIZE) code_size = MAX_CODE_SIZE;
+
+    data_size = mem->DC;
+    if (data_size < 0) data_size = 0;
+    if (data_size > MAX_DATA_SIZE) data_size = MAX_DATA_SIZE;
+
+    /* .ob */
     fob = fopen(path_ob, "w");
-    if (fob) {
-        int code_words = mem->IC - 100; /* logical addresses 100..IC-1 */
-        int data_words = mem->DC;
+    if (!fob) return;
 
-        fprintf(fob, "%d %d\n", code_words, data_words);
-
-        /* code section: logical 100..IC-1 */
-        for (i = 100; i < mem->IC; i++) {
-            fprint_word10(fob, mem->code[i - 100]);
-        }
-        /* data section: 0..DC-1 */
-        for (i = 0; i < mem->DC; i++) {
-            fprint_word10(fob, mem->data[i]);
-        }
-        fclose(fob);
-    }
-
-    /* ---- .ent (only if at least one entry & not extern) ---- */
+    /* header as base-4 letters (5 digits each to be safe) */
     {
-        int wrote_any = 0;
-        f = fopen(path_ent, "w");
-        if (f) {
-            for (s = symbols; s; s = s->next) {
-                if (s->is_entry && !s->is_extern) {
-                    fprintf(f, "%s %d\n", s->name, s->address);
-                    wrote_any = 1;
-                }
-            }
-            fclose(f);
-            if (!wrote_any) {
-                /* no entries -> remove empty file */
-                remove(path_ent);
-            }
-        }
+        char b4_code[6], b4_data[6];
+        to_base4_letters((unsigned int)code_size, 5, b4_code);
+        to_base4_letters((unsigned int)data_size, 5, b4_data);
+        fprintf(fob, "%s %s\n", b4_code, b4_data);
     }
 
-    /* ---- .ext (one line per extern use recorded) ---- */
-    if (g_ext_use_count > 0) {
-        f = fopen(path_ext, "w");
-        if (f) {
-            for (i = 0; i < g_ext_use_count; i++) {
-                fprintf(f, "%s %d\n", g_ext_uses[i].name, g_ext_uses[i].addr);
-            }
-            fclose(f);
-        }
-    } else {
-        /* make sure no stale file remains */
-        remove(path_ext);
+    /* code words at 100..IC-1 */
+    for (i = 0; i < code_size; ++i) {
+        int abs_addr = 100 + i;
+        char a4[5], w5[6];
+        addr_to_b4(abs_addr, a4);
+        word_to_b4(mem->code[i], w5);
+        fprintf(fob, "%s %s\n", a4, w5);
     }
+
+    /* data words follow code */
+    for (i = 0; i < data_size; ++i) {
+        int abs_addr = 100 + code_size + i;
+        char a4[5], w5[6];
+        addr_to_b4(abs_addr, a4);
+        word_to_b4(mem->data[i], w5);
+        fprintf(fob, "%s %s\n", a4, w5);
+    }
+
+    fclose(fob);
+
+    /* .ent (only entries that are not extern) */
+    fent = fopen(path_ent, "w");
+    if (fent) {
+        const Symbol *s = symbols;
+        while (s) {
+            if (s->is_entry && !s->is_extern) {
+                char a4[5];
+                addr_to_b4(s->address, a4);
+                fprintf(fent, "%s %s\n", s->name, a4);
+                wrote_ent = 1;
+            }
+            s = s->next;
+        }
+        fclose(fent);
+        if (!wrote_ent) remove(path_ent);
+    }
+
+    /* .ext (each recorded extern use) */
+    if (g_ext_use_count > 0) {
+        fext = fopen(path_ext, "w");
+        if (fext) {
+            for (i = 0; i < g_ext_use_count; ++i) {
+                char a4[5];
+                addr_to_b4(g_ext_uses[i].address, a4);
+                fprintf(fext, "%s %s\n", g_ext_uses[i].name, a4);
+            }
+            fclose(fext);
+            wrote_ext = 1;
+        }
+    }
+    if (!wrote_ext) remove(path_ext);
 }
 

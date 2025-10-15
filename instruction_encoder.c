@@ -10,9 +10,6 @@
 #include "error_list.h"
 #include "memory_image.h"
 
-/* Logical base for code addresses */
-#define LOGICAL_BASE 100
-
 /* Bit layout (10-bit word):
    [9..6] opcode
    [5..4] src addressing (2 bits)
@@ -124,6 +121,15 @@ static int pack_base_word(int opcode,int src_mode,int dst_mode){
 }
 static int pack_value_word(int value,int are){ return ((value & 0xFF)<<2) | (are & 0x3); }
 
+/* ---- fixup emitter: write placeholder and record address of that word ---- */
+static void emit_label_ref(MemoryImage *mem, const char *label, int line)
+{
+    /* write placeholder value word (ARE bits = absolute for now) */
+    add_code_word(mem, pack_value_word(0, ARE_A));
+    /* record fixup for the word we just wrote (its absolute code address is mem->IC-1) */
+    add_fixup(mem, mem->IC - 1, label, line);
+}
+
 /* ---------- main API ---------- */
 int encode_instruction(const char *line,
                        Symbol *symbols,
@@ -223,7 +229,7 @@ int encode_instruction(const char *line,
         /* 1 operand (destination) */
         if (operand_count == 1) {
             int base;
-            int dst_r, patch_addr;
+            int dst_r;
             long val;
             int dst_mode;
 
@@ -245,9 +251,7 @@ int encode_instruction(const char *line,
                 val = strtol(op1s + 1, NULL, 10);
                 add_code_word(mem, pack_value_word((int)val, ARE_A));
             } else { /* direct label */
-                patch_addr = LOGICAL_BASE + mem->IC;
-                add_code_word(mem, 0);
-                add_fixup(mem, patch_addr, op1s, line_num);
+                emit_label_ref(mem, op1s, line_num);
             }
 
             free(opsbuf);
@@ -291,9 +295,7 @@ int encode_instruction(const char *line,
             long v = strtol(op0s + 1, NULL, 10);
             add_code_word(mem, pack_value_word((int)v, ARE_A));
         } else { /* direct label */
-            int patch_addr = LOGICAL_BASE + mem->IC;
-            add_code_word(mem, 0);
-            add_fixup(mem, patch_addr, op0s, line_num);
+            emit_label_ref(mem, op0s, line_num);
         }
 
         /* destination extra word */
@@ -304,14 +306,11 @@ int encode_instruction(const char *line,
             long v = strtol(op1s + 1, NULL, 10);
             add_code_word(mem, pack_value_word((int)v, ARE_A));
         } else { /* direct label */
-            int patch_addr = LOGICAL_BASE + mem->IC;
-            add_code_word(mem, 0);
-            add_fixup(mem, patch_addr, op1s, line_num);
+            emit_label_ref(mem, op1s, line_num);
         }
 
         free(opsbuf);
         return 1;
     }
 }
-
 
