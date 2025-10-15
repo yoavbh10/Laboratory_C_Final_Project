@@ -24,4 +24,3 @@ EXT_LABEL: mov  r2, r3
            prn  r5
            rts
            stop
-

@@ -1,16 +1,15 @@
 ; This file is intentionally broken to test error detection
-MAIN:   mov     r2              ; Missing destination operand → should error
-        add     #5,             ; Missing second operand → should error
-        sub     unknown_label, r4   ; Uses undefined symbol
+MAIN:   mov     r2              ; Missing destination operand
+        add     #5,             ; Missing second operand
+        sub     unknown_label, r4
         xyz     r1, r2          ; Unknown opcode
-        lea     #5, r3          ; lea source operand can't be immediate → error
-        mov     r1 r2 r3        ; Too many operands → error
-        clr                     ; Missing operand for single-operand instruction → error
-        stop    r1              ; stop should have no operands → error
-        rts     #1              ; rts should have no operands → error
-        prn     #hello          ; Invalid immediate value (not a number) → error
+        lea     #5, r3          ; lea source can't be immediate
+        mov     r1 r2 r3        ; Too many operands
+        clr                      ; Missing operand
+        stop    r1               ; stop should have no operands
+        rts     #1               ; rts should have no operands
+        prn     #hello           ; Invalid immediate (not a number)
 
-STR:    .string hello           ; Missing quotes → error
-DATA:   .data   10,,20          ; Double comma → error
-LABEL:  .mat    [2][2] 1 2 3    ; Missing commas between matrix data → error
-
+STR:    .string hello            ; Missing quotes (directive; should be ignored in 2nd pass)
+DATA:   .data   10,,20           ; Bad data (directive; ignored here)
+LABEL:  .mat    [2][2] 1 2 3     ; Bad matrix (directive; ignored here)

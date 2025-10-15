@@ -5,21 +5,16 @@
 #include "memory_image.h"
 #include "error_list.h"
 
-/**
- * Encode a single assembly instruction line.
- *
- * @param line       The source line containing an instruction (already preprocessed, labels resolved)
- * @param line_num   Current source line number (for error reporting)
- * @param symbols    Symbol table (for resolving labels)
- * @param mem        Memory image (output encoded machine code)
- * @param errors     Error list for reporting encoding problems
- * @return 1 if successful, 0 if errors were added
- */
+#define MAX_TOKENS 10
+#define MAX_LINE_LENGTH 256  /* match second_pass.h for consistency */
+
+/* Encodes one instruction line into memory image.
+   Returns 1 on success, 0 on error. */
 int encode_instruction(const char *line,
-                       int line_num,
                        Symbol *symbols,
                        MemoryImage *mem,
-                       ErrorList *errors);
+                       ErrorList *errors,
+                       int line_num);
 
-#endif /* INSTRUCTION_ENCODER_H */
+#endif
 

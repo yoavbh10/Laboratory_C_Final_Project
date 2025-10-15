@@ -21,4 +21,3 @@ LOOP:       mov  #5, r1
 SUBROUTINE: inc  r0
             dec  r1
             stop
-
