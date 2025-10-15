@@ -1,5 +1,0 @@
-MAIN: mov #1, r1
-STRING_LABEL: .string "HELLO"
-DATA_LABEL: .data 1, -2, 3, 4
-stop
-

@@ -1,86 +1,110 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
 #include <ctype.h>
 #include "instruction_encoder.h"
-#include "symbol_table.h"
-#include "memory_image.h"
-#include "error_list.h"
 #include "instruction_set.h"
+#include "addressing_modes.h"
+#include "error_list.h"
 
-static int is_register(const char *token) {
-    return token[0] == 'r' && isdigit((unsigned char)token[1]) &&
-           token[2] == '\0' && token[1] >= '0' && token[1] <= '7';
+#define MAX_TOKENS 10
+
+/* --- Helpers --- */
+
+/* Trim whitespace in place */
+static void trim(char *str) {
+    char *end;
+    while (isspace((unsigned char)*str)) str++;
+    if (*str == 0) return;
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char)*end)) end--;
+    *(end + 1) = '\0';
 }
 
-static int addressing_mode(const char *token) {
-    if (token[0] == '#') return 0;    /* immediate */
-    if (is_register(token)) return 2; /* register direct */
-    return 1;                         /* direct (label) */
+/* Remove comment starting with ';' */
+static void strip_comment(char *line) {
+    char *comment = strchr(line, ';');
+    if (comment) *comment = '\0';
 }
 
-int encode_instruction(const char *line, Symbol *symbols,
-                       MemoryImage *mem, ErrorList *errors)
-{
-    char op[10], src[32], dst[32];
-    int opcode, mode_src, mode_dst;
-    int words_added = 1; /* at least one word for instruction */
+/* Remove leading label (ends with ':') */
+static void strip_label(char *line) {
+    char *colon = strchr(line, ':');
+    if (colon) {
+        memmove(line, colon + 1, strlen(colon + 1) + 1);
+    }
+}
 
-    /* parse: opcode src , dst */
-    int n = sscanf(line, "%s %[^,], %s", op, src, dst);
-    if (n < 2) {
-        add_error(errors, 0, "Invalid instruction syntax");
+/* Tokenize line into tokens[] and return count */
+static int tokenize(const char *line, char *tokens[], int max_tokens) {
+    char *copy;
+    char *p;
+    int count = 0;
+
+    copy = (char *)malloc(strlen(line) + 1);
+    if (!copy) return 0;
+    strcpy(copy, line);
+
+    p = strtok(copy, " \t,");
+    while (p && count < max_tokens) {
+        tokens[count] = (char *)malloc(strlen(p) + 1);
+        strcpy(tokens[count], p);
+        count++;
+        p = strtok(NULL, " \t,");
+    }
+    free(copy);
+    return count;
+}
+
+static void free_tokens(char *tokens[], int count) {
+    int i;
+    for (i = 0; i < count; i++)
+        free(tokens[i]);
+}
+
+/* --- Main Encoding Function --- */
+int encode_instruction(const char *line, Symbol *symbols, MemoryImage *mem, ErrorList *errors, int line_num) {
+    char clean[MAX_LINE_LENGTH];
+    char *tokens[MAX_TOKENS];
+    int token_count;
+    const Instruction *inst;
+
+    /* Copy and preprocess line */
+    strcpy(clean, line);
+    strip_comment(clean);
+    strip_label(clean);
+    trim(clean);
+    if (strlen(clean) == 0)
+        return 1; /* empty line after stripping label & comment */
+
+    token_count = tokenize(clean, tokens, MAX_TOKENS);
+    if (token_count == 0) {
+        free_tokens(tokens, token_count);
+        add_error(errors, line_num, "Invalid instruction syntax");
         return 0;
     }
 
-    /* lookup opcode */
-    opcode = get_opcode(op);
-    if (opcode < 0) {
-        add_error(errors, 0, "Unknown opcode");
+    inst = find_instruction(tokens[0]);
+    if (!inst) {
+        char msg[100];
+        sprintf(msg, "Unknown opcode: %s", tokens[0]);
+        add_error(errors, line_num, msg);
+        free_tokens(tokens, token_count);
         return 0;
     }
 
-    /* determine addressing modes */
-    mode_src = addressing_mode(src);
-    mode_dst = (n == 3) ? addressing_mode(dst) : addressing_mode(src);
-
-    /* encode first word */
-    {
-        int word = (opcode << 12) | (mode_src << 10) | (mode_dst << 8);
-        add_code_word(mem, word);
+    if (token_count - 1 != inst->operands) {
+        char msg[100];
+        sprintf(msg, "Operand count mismatch for %s", tokens[0]);
+        add_error(errors, line_num, msg);
+        free_tokens(tokens, token_count);
+        return 0;
     }
 
-    /* handle operands */
-    if (mode_src == 0) { /* immediate */
-        int val = atoi(src + 1);
-        add_code_word(mem, val);
-        words_added++;
-    } else if (mode_src == 1) { /* label */
-        Symbol *sym = find_symbol(symbols, src);
-        if (!sym) {
-            add_error(errors, 0, "Undefined label in source operand");
-        } else {
-            add_code_word(mem, sym->address);
-        }
-        words_added++;
-    }
+    /* For now, just create placeholder code words */
+    add_code_word(mem, inst->opcode << 6); /* simple encoding placeholder */
 
-    if (n == 3) { /* destination operand provided */
-        if (mode_dst == 0) {
-            int val = atoi(dst + 1);
-            add_code_word(mem, val);
-            words_added++;
-        } else if (mode_dst == 1) {
-            Symbol *sym = find_symbol(symbols, dst);
-            if (!sym) {
-                add_error(errors, 0, "Undefined label in destination operand");
-            } else {
-                add_code_word(mem, sym->address);
-            }
-            words_added++;
-        }
-    }
-
-    return words_added;
+    free_tokens(tokens, token_count);
+    return 1;
 }
 
