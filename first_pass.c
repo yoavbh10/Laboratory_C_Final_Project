@@ -200,34 +200,57 @@ static void bind_label_at_dc(MemoryImage *mem, Symbol **symtab, ErrorList *error
     }
 }
 
+/* Parse unlimited comma-separated integers for .data */
 static void handle_data(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
-                        const char *label_opt, char *args){
-    char *parts[256];
-    int n = 0, i;
+                        const char *label_opt, char *args)
+{
+    char *p = args;
+    char *endp;
+    long v;
 
-    bind_label_at_dc(mem, symtab, errors, line, label_opt);
-
-    if (!args || is_blank(args)) { add_err(errors,line,".data: missing numbers"); return; }
-
-    /* split by commas (we cap at 256 items) */
-    {
-        char *dup = xstrdup(args);
-        if (!dup) { add_err(errors,line,"oom"); return; }
-        n = split_commas_inplace(dup, parts, 256);
-        if (n == 0) { add_err(errors, line, ".data: no numbers"); free(dup); return; }
-
-        for (i=0;i<n;i++) {
-            char *tok = lstrip(parts[i]);
-            char *endp = NULL;
-            long v;
-            if (*tok=='\0') { add_err(errors,line,".data: empty item"); continue; }
-            v = strtol(tok, &endp, 10);
-            if (endp == tok || *lstrip(endp) != '\0') { add_err(errors,line,".data: invalid integer '%s'", tok); continue; }
-            add_data_word(mem, (int)v);
+    if (label_opt && *label_opt) {
+        Symbol *ex = find_symbol(*symtab, label_opt);
+        if (ex) {
+            if (ex->is_extern) add_error(errors, line, ".data: label redefines extern");
+            else if (ex->address != 0) add_error(errors, line, ".data: duplicate label");
+            else { ex->address = mem->DC; ex->type = SYMBOL_DATA; }
+        } else {
+            add_symbol(symtab, label_opt, mem->DC, SYMBOL_DATA);
         }
-        free(dup);
+    }
+
+    if (!args) { add_error(errors, line, ".data: missing numbers"); return; }
+
+    for (;;) {
+        char msg[160];
+
+        /* skip leading spaces */
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (*p == '\0') break;  /* no more items */
+
+        v = strtol(p, &endp, 10);
+        if (endp == p) {
+            /* build the message explicitly (add_error is not printf-style) */
+            sprintf(msg, ".data: invalid integer near '%s'", p);
+            add_error(errors, line, msg);
+            return;
+        }
+        add_data_word(mem, (int)v);
+
+        /* move past the parsed number and any spaces */
+        p = endp;
+        while (*p && isspace((unsigned char)*p)) p++;
+
+        if (*p == ',') { p++; continue; }      /* next value */
+        else if (*p == '\0') break;            /* end of list */
+        else {
+            add_error(errors, line, ".data: expected comma");
+            return;
+        }
     }
 }
+
+
 
 static void handle_string(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
                           const char *label_opt, char *args){

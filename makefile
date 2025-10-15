@@ -6,5 +6,5 @@ assembler: main.c pre_assembler.c first_pass.c second_pass.c instruction_encoder
 	    -o assembler
 
 clean:
-	rm -f assembler *.o *.amx *.ob *.ent *.ext
+	rm -f assembler *.o *.ob *.ent *.ext
 

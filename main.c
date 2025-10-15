@@ -59,10 +59,10 @@ int main(int argc, char **argv)
             ok_all = 0;
             continue;
         }
-        printf("[pre] macros expanded -> %s\n", expanded_am[0] ? expanded_am : "(am)");
+		/*"[pre] macros expanded -> %s\n", expanded_am[0] ? expanded_am : "(am)");*/
 
         /* pass 1 */
-        printf("[pass1] running on: %s\n", expanded_am[0] ? expanded_am : src_path);
+        /*printf("[pass1] running on: %s\n", expanded_am[0] ? expanded_am : src_path);*/
         if (!first_pass(expanded_am[0] ? expanded_am : src_path, &symbols, &mem, &errors)) {
             print_errors(&errors, src_path);
             free_symbol_table(&symbols);
@@ -70,7 +70,7 @@ int main(int argc, char **argv)
             ok_all = 0;
             continue;
         }
-        printf("[pass1] OK (IC=%d, DC=%d)\n", mem.IC, mem.DC);
+        /*printf("[pass1] OK (IC=%d, DC=%d)\n", mem.IC, mem.DC);*/
 
         /* memory limit: addresses must end <= 255 */
         if (LOGICAL_BASE + mem.IC + mem.DC > 256) {
@@ -83,12 +83,12 @@ int main(int argc, char **argv)
         }
 
         /* pass 2 */
-        printf("[pass2] resolving fixups & writing outputs for base: %s\n", src_path);
+        /*printf("[pass2] resolving fixups & writing outputs for base: %s\n", src_path);*/
         if (!second_pass(src_path, &symbols, &mem, &errors)) {
             print_errors(&errors, src_path);
             ok_all = 0;
         } else {
-            printf("[done]\n");
+            /*printf("[done]\n");*/
         }
 
         free_symbol_table(&symbols);
