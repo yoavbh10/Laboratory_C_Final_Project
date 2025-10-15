@@ -1,3 +1,8 @@
+/* output_files.c
+ * Writes .ob/.ent/.ext files in custom base-4; tracks extern symbol uses.
+ * Formats addresses/words and derives base name from source.
+ */
+
 #include "output_files.h"
 #include <stdio.h>
 #include <string.h>
@@ -14,11 +19,13 @@ typedef struct {
 static ExtUse g_ext_uses[MAX_EXT_USES];
 static int    g_ext_use_count = 0;
 
+/* of_init — reset recorded extern uses */
 void of_init(void)
 {
     g_ext_use_count = 0;
 }
 
+/* of_record_extern_use — add one extern reference (name@address) */
 void of_record_extern_use(const char *name, int use_address)
 {
     if (!name) return;
@@ -31,6 +38,7 @@ void of_record_extern_use(const char *name, int use_address)
 
 /* ---- base-4 "abcd" helpers --------------------------------------------- */
 
+/* to_base4_letters — write n as base-4 using digits a/b/c/d with fixed width */
 static void to_base4_letters(unsigned int n, int width, char *out)
 {
     static const char digits[4] = {'a','b','c','d'};
@@ -42,12 +50,14 @@ static void to_base4_letters(unsigned int n, int width, char *out)
     out[width] = '\0';
 }
 
+/* addr_to_b4 — 0..255 address → 4 base-4 letters */
 static void addr_to_b4(int addr, char *out4)
 {
     unsigned int v = (unsigned int)(addr & 0xFF); /* 0..255 */
     to_base4_letters(v, 4, out4);
 }
 
+/* word_to_b4 — 10-bit word → 5 base-4 letters */
 static void word_to_b4(int word, char *out5)
 {
     unsigned int v = (unsigned int)(word & 0x3FF); /* 10-bit word */
@@ -56,6 +66,7 @@ static void word_to_b4(int word, char *out5)
 
 /* ---- path helper -------------------------------------------------------- */
 
+/* derive_base_name — basename without extension into dst */
 static void derive_base_name(const char *src_filename, char *dst, size_t dstsz)
 {
     const char *last_slash = NULL, *p = src_filename, *dot = NULL;
@@ -76,6 +87,7 @@ static void derive_base_name(const char *src_filename, char *dst, size_t dstsz)
 
 /* ---- writers ------------------------------------------------------------ */
 
+/* write_output_files — emit .ob/.ent/.ext for a compiled source */
 void write_output_files(const char *src_filename,
                         const MemoryImage *mem,
                         const Symbol *symbols)

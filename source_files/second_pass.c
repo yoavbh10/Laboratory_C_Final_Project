@@ -1,11 +1,8 @@
-/* second_pass.c — ANSI C (C90)
-   Pass 2:
-   - Re-encode the expanded source (instructions only) into mem->code
-   - Resolve fixups:
-       extern  -> ARE=E and record absolute address in .ext
-       internal-> ARE=R
-   - Write .ob/.ent/.ext in custom base-4
-*/
+/* second_pass.c
+ * Pass 2: encode instructions into code image, resolve symbols,
+ * patch extern/internal refs, and write output files (.ob/.ent/.ext).
+ */
+
 #include <stdio.h>
 #include <string.h>
 
@@ -29,7 +26,7 @@
 #define LOGICAL_BASE       100
 #define MAX_LINE_LENGTH     80
 
-/* -------- tiny string helpers -------- */
+/* strip_comment/lstrip/rstrip/trim — simple string cleanup */
 static void strip_comment(char *s){ for(;*s;++s){ if(*s==';'){*s='\0';break;} } }
 static char *lstrip(char *s){ while(*s && (*s==' '||*s=='\t')) ++s; return s; }
 static void rstrip_inplace(char *s){
@@ -38,24 +35,22 @@ static void rstrip_inplace(char *s){
 }
 static void trim_inplace(char *s){ char *p=lstrip(s); if(p!=s) memmove(s,p,strlen(p)+1); rstrip_inplace(s); }
 
-/* Re-encode instructions from expanded file (amx) into mem->code */
+/* encode_instructions_from_file — re-encode instructions into mem->code */
 static int encode_instructions_from_file(const char *expanded_path,
                                          Symbol *symbols,
                                          MemoryImage *mem,
                                          ErrorList *errors)
 {
     FILE *fp = fopen(expanded_path, "r");
-    char linebuf[1024];
-    int line_no = 0;
+    char linebuf[1024]; int line_no = 0;
 
     if (!fp) { add_error(errors, 0, "cannot open expanded source for pass-2"); return 0; }
 
-    mem->IC = 0;            /* number of code words written */
-    mem->fixup_count = 0;   /* clear previous fixups */
+    mem->IC = 0;
+    mem->fixup_count = 0;
 
     while (fgets(linebuf, sizeof(linebuf), fp)) {
-        size_t raw_len;
-        char work[1024];
+        size_t raw_len; char work[1024];
         line_no++;
 
         raw_len = strcspn(linebuf, "\r\n");
@@ -66,7 +61,7 @@ static int encode_instructions_from_file(const char *expanded_path,
         trim_inplace(work);
         if (*work == '\0') continue;
 
-        /* Encode instruction; keep going even if it adds errors */
+        /* encode instruction (still collect errors if any) */
         (void)encode_instruction(work, symbols, mem, errors, line_no);
     }
 
@@ -74,10 +69,10 @@ static int encode_instructions_from_file(const char *expanded_path,
     return 1;
 }
 
+/* second_pass — resolve fixups and write outputs */
 int second_pass(const char *expanded_filename, Symbol **symbols, MemoryImage *mem, ErrorList *errors)
 {
-    int k;
-    int had_errors = 0;
+    int k, had_errors = 0;
 
     if (!expanded_filename || !symbols || !*symbols || !mem || !errors) {
         add_error(errors, 0, "second_pass: invalid arguments");
@@ -86,19 +81,16 @@ int second_pass(const char *expanded_filename, Symbol **symbols, MemoryImage *me
 
     of_init(); /* reset extern-use list */
 
-    /* 1) Encode instructions from expanded file into mem->code */
-    if (!encode_instructions_from_file(expanded_filename, *symbols, mem, errors)) {
-        return 0;
-    }
+    /* 1) encode instructions */
+    if (!encode_instructions_from_file(expanded_filename, *symbols, mem, errors)) return 0;
 
-    /* 2) Resolve fixups and patch code image */
+    /* 2) resolve fixups */
     for (k = 0; k < mem->fixup_count; ++k) {
         Fixup *fx = &mem->fixups[k];
         const Symbol *sym = find_symbol(*symbols, fx->label);
-        int idx = fx->word_index;                 /* <-- matches your struct */
-        int abs_addr = LOGICAL_BASE + idx;        /* for .ext file */
-        int are_bits;
-        int patched;
+        int idx = fx->word_index;
+        int abs_addr = LOGICAL_BASE + idx; /* used in .ext file */
+        int are_bits, patched;
 
         if (!sym) {
             char msg[256];
@@ -116,7 +108,7 @@ int second_pass(const char *expanded_filename, Symbol **symbols, MemoryImage *me
         }
 
         if (idx >= 0 && idx < MAX_CODE_SIZE) {
-            /* Value occupies the high 8 bits; ARE in low 2 bits. */
+            /* patch code word: high 8 bits = value, low 2 bits = ARE */
             int value8 = (sym->address & 0xFF);
             patched = (value8 << 2) | (are_bits & 0x3);
             mem->code[idx] = patched;
@@ -125,7 +117,7 @@ int second_pass(const char *expanded_filename, Symbol **symbols, MemoryImage *me
 
     if (had_errors) return 0;
 
-    /* 3) Emit outputs (.ob/.ent/.ext) */
+    /* 3) write output files */
     write_output_files(expanded_filename, mem, *symbols);
     return 1;
 }

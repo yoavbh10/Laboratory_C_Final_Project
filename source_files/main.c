@@ -1,4 +1,8 @@
-/* main.c — orchestrates pre-assembler, pass1, pass2, and cleans .am */
+/* main.c
+ * Entry point for the assembler. Handles args, runs pre-assembler, pass1 & pass2.
+ * Cleans up temp files and checks memory limits.
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,13 +17,13 @@
 
 #define LOGICAL_BASE 100
 
-/* Minimal local printer to avoid linker errors (structure of ErrorList may be hidden) */
+/* print_errors — minimal error printer if detailed struct is hidden */
 static void print_errors(const ErrorList *list, const char *filename) {
     (void)list;
     fprintf(stderr, "[error] issues detected while processing %s (see messages above)\n", filename);
 }
 
-/* Append ".as" if arg has no '.' */
+/* derive_source_name — ensure input ends with .as */
 static void derive_source_name(const char *arg, char *out, size_t outsz) {
     const char *dot = NULL, *p = arg;
     size_t n = strlen(arg);
@@ -31,6 +35,7 @@ static void derive_source_name(const char *arg, char *out, size_t outsz) {
     }
 }
 
+/* main — loops over files, runs assembler passes */
 int main(int argc, char **argv)
 {
     int i, ok_all = 1;
@@ -52,17 +57,15 @@ int main(int argc, char **argv)
         init_symbol_table(&symbols);
         init_memory_image(&mem);
 
-        /* pre-assemble to .am */
+        /* pre-assembler -> .am file */
         if (!pre_assemble(src_path, expanded_am, sizeof(expanded_am), &errors)) {
             print_errors(&errors, src_path);
             free_symbol_table(&symbols);
             ok_all = 0;
             continue;
         }
-		/*"[pre] macros expanded -> %s\n", expanded_am[0] ? expanded_am : "(am)");*/
 
-        /* pass 1 */
-        /*printf("[pass1] running on: %s\n", expanded_am[0] ? expanded_am : src_path);*/
+        /* first pass — builds symbol table & instruction skeletons */
         if (!first_pass(expanded_am[0] ? expanded_am : src_path, &symbols, &mem, &errors)) {
             print_errors(&errors, src_path);
             free_symbol_table(&symbols);
@@ -70,9 +73,8 @@ int main(int argc, char **argv)
             ok_all = 0;
             continue;
         }
-        /*printf("[pass1] OK (IC=%d, DC=%d)\n", mem.IC, mem.DC);*/
 
-        /* memory limit: addresses must end <= 255 */
+        /* memory must not exceed 255 */
         if (LOGICAL_BASE + mem.IC + mem.DC > 256) {
             add_error(&errors, 0, "memory overflow: code+data exceed address 255");
             print_errors(&errors, src_path);
@@ -82,13 +84,10 @@ int main(int argc, char **argv)
             continue;
         }
 
-        /* pass 2 */
-        /*printf("[pass2] resolving fixups & writing outputs for base: %s\n", src_path);*/
+        /* second pass — resolves symbols & writes outputs */
         if (!second_pass(src_path, &symbols, &mem, &errors)) {
             print_errors(&errors, src_path);
             ok_all = 0;
-        } else {
-            /*printf("[done]\n");*/
         }
 
         free_symbol_table(&symbols);

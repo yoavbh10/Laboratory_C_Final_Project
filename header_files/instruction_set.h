@@ -1,3 +1,8 @@
+/* instruction_set.h
+ * Defines instruction opcodes, operands, and addressing rules.
+ * Provides lookup and debug helpers for instructions.
+ */
+
 #ifndef INSTRUCTION_SET_H
 #define INSTRUCTION_SET_H
 
@@ -12,22 +17,22 @@ typedef enum {
     ADDR_REGISTER  = 3  /* r0-r7 */
 } AddressingType;
 
-/* Instruction specification */
+/* Instruction spec: mnemonic, opcode, addressing rules, operand count */
 typedef struct {
     char name[MAX_OPCODE_NAME];
     int opcode;
-    int allowed_src[4]; /* which addressing modes allowed for source */
-    int allowed_dst[4]; /* which addressing modes allowed for destination */
-    int operands;       /* number of operands: 0, 1, or 2 */
+    int allowed_src[4];
+    int allowed_dst[4];
+    int operands; /* 0, 1, or 2 */
 } Instruction;
 
-/* Look up an instruction by name, returns pointer or NULL if not found */
+/* find_instruction — lookup by mnemonic, or NULL if not found */
 const Instruction* find_instruction(const char *name);
 
-/* Debug: print all instructions */
+/* print_instruction_table — debug print of all instructions */
 void print_instruction_table(void);
 
-/* Return opcode for given mnemonic, or -1 if unknown */
+/* get_opcode — return opcode for mnemonic, -1 if unknown */
 int get_opcode(const char *mnemonic);
 
 #endif

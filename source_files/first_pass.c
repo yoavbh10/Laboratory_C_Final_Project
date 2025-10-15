@@ -1,7 +1,7 @@
-/* first_pass.c — ANSI C (C90)
-   Pass 1: build symbol table, data image, and compute code size (IC).
-   Addressing: #immediate, direct LABEL, matrix LABEL[rX][rY], register r0..r7.
-*/
+/* first_pass.c
+ * Pass 1: parse source, collect symbols/data, and compute code size (IC).
+ * Validates labels/directives and infers addressing for sizing only.
+ */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -18,6 +18,8 @@
 #define LOGICAL_BASE 100
 
 /* ---------- small helpers ---------- */
+
+/* add_err — printf-style add_error */
 static void add_err(ErrorList *errors, int line, const char *fmt, ...) {
     char buf[ERROR_MSG_LEN];
     va_list ap;
@@ -26,17 +28,29 @@ static void add_err(ErrorList *errors, int line, const char *fmt, ...) {
     va_end(ap);
     add_error(errors, line, buf);
 }
+
+/* lstrip — skip leading spaces */
 static char *lstrip(char *s) { while (*s && isspace((unsigned char)*s)) s++; return s; }
+
+/* rstrip_inplace — trim trailing spaces/newlines */
 static void rstrip_inplace(char *s) {
     size_t n = strlen(s);
     while (n && (s[n-1]=='\n' || s[n-1]=='\r' || isspace((unsigned char)s[n-1]))) s[--n]='\0';
 }
+
+/* trim_inplace — strip both ends */
 static void trim_inplace(char *s) { char *ls; rstrip_inplace(s); ls=lstrip(s); if (ls!=s) memmove(s, ls, strlen(ls)+1); }
+
+/* strip_comment — cut ';' to end */
 static void strip_comment(char *s) { for(;*s;++s){ if(*s==';'){*s='\0'; break;} } }
+
+/* is_blank — all whitespace? */
 static int  is_blank(const char *s){ while(*s){ if(!isspace((unsigned char)*s)) return 0; s++; } return 1; }
+
+/* xstrdup — ANSI-safe strdup */
 static char *xstrdup(const char *s){ size_t n=strlen(s)+1; char *p=(char*)malloc(n); if(p) memcpy(p,s,n); return p; }
 
-/* split by commas into at most 2 operands; trim; drop empties; never read past end */
+/* split_commas_inplace — split into <=2 trimmed parts */
 static int split_commas_inplace(char *s, char *parts[], int max_parts) {
     int count = 0;
     char *q = s;
@@ -63,7 +77,7 @@ static int split_commas_inplace(char *s, char *parts[], int max_parts) {
     return count;
 }
 
-/* .string "foo" → bytes including terminating zero (caller frees *out) */
+/* parse_string_literal — ".string" -> bytes+NUL (malloc'd) */
 static int parse_string_literal(const char *s, unsigned char **out, size_t *out_len) {
     const char *start;
     size_t n, i;
@@ -85,11 +99,17 @@ static int parse_string_literal(const char *s, unsigned char **out, size_t *out_
 }
 
 /* ---------- label/name helpers ---------- */
+
+/* is_register_name — r0..r7 */
 static int is_register_name(const char *s){ return s && s[0]=='r' && s[1]>='0' && s[1]<='7' && s[2]=='\0'; }
+
+/* is_directive_tok — known directives */
 static int is_directive_tok(const char *tok){
     return strcmp(tok,".data")==0 || strcmp(tok,".string")==0 || strcmp(tok,".extern")==0 ||
            strcmp(tok,".entry")==0 || strcmp(tok,".mat")==0;
 }
+
+/* is_valid_label_name — letters/digits, not reserved */
 static int is_valid_label_name(const char *name){
     size_t i, n = strlen(name);
     if (n==0 || n>=MAX_LABEL_LEN) return 0;
@@ -101,7 +121,7 @@ static int is_valid_label_name(const char *name){
     return 1;
 }
 
-/* read leading "<label>:" if present; advance *p; copy name */
+/* take_leading_label — parse "<label>:" at start if present */
 static int take_leading_label(char **p, char out_label[MAX_LABEL_LEN]){
     char *s = *p;
     size_t i = 0;
@@ -116,6 +136,7 @@ static int take_leading_label(char **p, char out_label[MAX_LABEL_LEN]){
 }
 
 /* ---------- addressing parse (for sizing only) ---------- */
+
 typedef enum {
     AM_INVALID  = -1,
     AM_IMM      = ADDR_IMMEDIATE, /* 0 */
@@ -124,6 +145,7 @@ typedef enum {
     AM_REG      = ADDR_REGISTER   /* 3 */
 } AddrMode;
 
+/* enc_is_matrix — quick validator for LABEL[rX][rY] form */
 static int enc_is_matrix(const char *s) {
     const char *lb, *mid, *rb1, *rb2;
     char tmp[64];
@@ -144,6 +166,7 @@ static int enc_is_matrix(const char *s) {
     return 1;
 }
 
+/* parse_operand_mode — detect addressing (lenient) */
 static AddrMode parse_operand_mode(const char *op){
     char *endp;
     if (!op) return AM_INVALID;
@@ -161,6 +184,7 @@ static AddrMode parse_operand_mode(const char *op){
     return is_valid_label_name(op) ? AM_DIR : AM_INVALID;
 }
 
+/* mode_allowed — does idef allow this operand mode? */
 static int mode_allowed(const Instruction *idef, int op_index, AddrMode m){
     int idx = (int)m;
     if (idx < 0 || idx > 3) return 0;
@@ -169,8 +193,7 @@ static int mode_allowed(const Instruction *idef, int op_index, AddrMode m){
     return 0;
 }
 
-/* base=1 + extras per operand; if two registers (2-op) → pack into one extra word
-   matrix operand counts as +2 (label fixup + packed indexes) */
+/* compute_words — base=1 + extras; reg-reg packs; matrix adds +2 */
 static int compute_words(const Instruction *idef, AddrMode modes[], size_t nops){
     int words = 1;
     (void)idef; /* sizing here does not need the full idef */
@@ -189,6 +212,8 @@ static int compute_words(const Instruction *idef, AddrMode modes[], size_t nops)
 }
 
 /* ---------- directives ---------- */
+
+/* bind_label_at_dc — if label exists, attach DC (DATA) */
 static void bind_label_at_dc(MemoryImage *mem, Symbol **symtab, ErrorList *errors, int line, const char *label_opt){
     if (label_opt && *label_opt) {
         Symbol *ex = find_symbol(*symtab, label_opt);
@@ -200,7 +225,7 @@ static void bind_label_at_dc(MemoryImage *mem, Symbol **symtab, ErrorList *error
     }
 }
 
-/* Parse unlimited comma-separated integers for .data */
+/* handle_data — parse unlimited comma-separated integers */
 static void handle_data(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
                         const char *label_opt, char *args)
 {
@@ -250,8 +275,7 @@ static void handle_data(MemoryImage *mem, ErrorList *errors, Symbol **symtab, in
     }
 }
 
-
-
+/* handle_string — emit bytes of quoted string (incl. NUL) */
 static void handle_string(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
                           const char *label_opt, char *args){
     unsigned char *bytes = NULL;
@@ -264,6 +288,7 @@ static void handle_string(MemoryImage *mem, ErrorList *errors, Symbol **symtab, 
     free(bytes);
 }
 
+/* handle_extern — mark symbol as extern (create if needed) */
 static void handle_extern(Symbol **symtab, ErrorList *errors, int line, char *args){
     char name[MAX_LABEL_LEN]={0};
     Symbol *existing;
@@ -289,6 +314,7 @@ static void handle_extern(Symbol **symtab, ErrorList *errors, int line, char *ar
     }
 }
 
+/* handle_entry — mark symbol as entry (create if needed) */
 static void handle_entry(Symbol **symtab, ErrorList *errors, int line, char *args){
     char name[MAX_LABEL_LEN]={0};
     Symbol *sym;
@@ -307,7 +333,7 @@ static void handle_entry(Symbol **symtab, ErrorList *errors, int line, char *arg
     if (sym) sym->is_entry = 1;
 }
 
-/* .mat [R][C] v1,v2,... → writes R*C data words, zero-filling missing initializers */
+/* handle_mat — parse .mat [R][C] + initializers (zero-fill) */
 static void handle_mat(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
                        const char *label_opt, char *args){
     int R = 0, C = 0, total, i;
@@ -359,6 +385,8 @@ static void handle_mat(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int
 }
 
 /* ---------- instruction handling (sizing + label binding) ---------- */
+
+/* handle_instruction — parse mnemonic/ops, size words, bind label */
 static void handle_instruction(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
                                const char *label_opt, char *cursor)
 {
@@ -449,6 +477,8 @@ static void handle_instruction(MemoryImage *mem, ErrorList *errors, Symbol **sym
 }
 
 /* ---------- end-of-pass helpers ---------- */
+
+/* bump_data_symbols_by_icf — offset DATA labels by final code size+base */
 static void bump_data_symbols_by_icf(Symbol *head, int icf_words){
     int bump = LOGICAL_BASE + icf_words;
     Symbol *s = head;
@@ -456,6 +486,8 @@ static void bump_data_symbols_by_icf(Symbol *head, int icf_words){
 }
 
 /* ---------- entry point ---------- */
+
+/* first_pass — scan file, fill symtab/DC, and compute IC */
 int first_pass(const char *filename, Symbol **symtab, MemoryImage *mem, ErrorList *errors){
     FILE *fp = fopen(filename, "r");
     char linebuf[1024];

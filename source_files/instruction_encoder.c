@@ -1,3 +1,7 @@
+/* instruction_encoder.c
+ * Encodes a single line into code/data words (10-bit) and records fixups.
+ * Used in pass 2: parses mnemonic/operands and emits words into MemoryImage.
+ */
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -27,6 +31,8 @@
 enum { ARE_A = 0, ARE_E = 1, ARE_R = 2 };
 
 /* ---------- small helpers (ANSI C) ---------- */
+
+/* add_err — printf-style add_error */
 static void add_err(ErrorList *errors, int line, const char *fmt, ...) {
     char buf[ERROR_MSG_LEN];
     va_list ap;
@@ -36,17 +42,24 @@ static void add_err(ErrorList *errors, int line, const char *fmt, ...) {
     add_error(errors, line, buf);
 }
 
+/* strip_comment — cut ';' to end */
 static void strip_comment(char *s) {
     for (; *s; ++s) if (*s == ';') { *s = '\0'; break; }
 }
+
+/* lstrip — skip leading spaces */
 static char *lstrip(char *s) { while (*s && isspace((unsigned char)*s)) s++; return s; }
+
+/* rstrip_inplace — trim trailing spaces/newlines */
 static void rstrip_inplace(char *s) {
     size_t n = strlen(s);
     while (n && (s[n-1] == '\n' || s[n-1] == '\r' || isspace((unsigned char)s[n-1]))) s[--n] = '\0';
 }
+
+/* trim_inplace — strip both ends */
 static void trim_inplace(char *s) { char *ls; rstrip_inplace(s); ls = lstrip(s); if (ls != s) memmove(s, ls, strlen(ls)+1); }
 
-/* Tokenize by whitespace/commas (used only to grab optional label + mnemonic) */
+/* tokenize — split line into tokens separated by spaces/commas */
 static int tokenize(const char *line, char tokens[][31], int max_tokens) {
     int count = 0;
     const char *p = line;
@@ -68,7 +81,7 @@ static int is_directive(const char *tok) {
             strcmp(tok, ".extern")==0 || strcmp(tok, ".entry")==0);
 }
 
-/* ANSI strdup */
+/* xstrdup — ANSI-safe strdup */
 static char *xstrdup(const char *s) {
     size_t n = strlen(s) + 1;
     char *p = (char*)malloc(n);
@@ -76,7 +89,7 @@ static char *xstrdup(const char *s) {
     return p;
 }
 
-/* split by commas into at most 2 operands; trim; drop empties; never read past end */
+/* split_commas_inplace — split into <=2 trimmed operands */
 static int split_commas_inplace(char *s, char *parts[], int max_parts) {
     int count = 0;
     char *q = s;
@@ -104,7 +117,11 @@ static int split_commas_inplace(char *s, char *parts[], int max_parts) {
 }
 
 /* local addressing helpers */
+
+/* enc_is_register — r0..r7 */
 static int enc_is_register(const char *s) { return s && s[0]=='r' && s[1]>='0' && s[1]<='7' && s[2]=='\0'; }
+
+/* enc_is_immediate — '#number' */
 static int enc_is_immediate(const char *s) {
     char *e;
     if (!s || s[0] != '#') return 0;
@@ -112,7 +129,7 @@ static int enc_is_immediate(const char *s) {
     return *lstrip(e) == '\0';
 }
 
-/* Matrix parser: LABEL[rX][rY], both indexes must be registers r0..r7 */
+/* enc_is_matrix — LABEL[rX][rY], returns label and two registers */
 static int enc_is_matrix(const char *s, char label_out[MAX_LABEL_LEN], int *row_r, int *col_r) {
     const char *lb, *mid, *rb1, *rb2;
     size_t name_len;
@@ -153,6 +170,7 @@ static int enc_is_matrix(const char *s, char label_out[MAX_LABEL_LEN], int *row_
     return 1;
 }
 
+/* detect_mode_lenient — guess mode for sizing/encoding */
 static int detect_mode_lenient(const char *operand) {
     char dummy[MAX_LABEL_LEN];
     int r, c;
@@ -169,7 +187,7 @@ static int pack_base_word(int opcode,int src_mode,int dst_mode){
 }
 static int pack_value_word(int value,int are){ return ((value & 0xFF)<<2) | (are & 0x3); }
 
-/* emit matrix extra words: label word (fixup) + packed regs (ARE=A) */
+/* emit_matrix_words — label fixup + packed regs */
 static void emit_matrix_words(const char *operand, MemoryImage *mem, ErrorList *errors, int line_num) {
     char label[MAX_LABEL_LEN];
     int rr, cc;
@@ -194,6 +212,8 @@ static void emit_matrix_words(const char *operand, MemoryImage *mem, ErrorList *
 }
 
 /* ---------- main API ---------- */
+
+/* encode_instruction — parse/encode a single line into MemoryImage */
 int encode_instruction(const char *line,
                        Symbol *symbols,
                        MemoryImage *mem,

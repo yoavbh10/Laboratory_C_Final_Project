@@ -1,27 +1,32 @@
+/* error_list.h
+ * Linked list of errors with line numbers.
+ * Used by passes to collect and report issues.
+ */
+
 #ifndef ERROR_LIST_H
 #define ERROR_LIST_H
 
 #define ERROR_MSG_LEN 100
 
-/* Node representing a single error */
+/* One error node (line + message) */
 typedef struct ErrorNode {
     int line;
     char message[ERROR_MSG_LEN];
     struct ErrorNode *next;
 } ErrorNode;
 
-/* Container for all errors */
+/* List container (head pointer) */
 typedef struct {
     ErrorNode *head;
 } ErrorList;
 
-/* Initialize an error list */
+/* init_error_list — set list head to NULL */
 void init_error_list(ErrorList *list);
 
-/* Add an error message for a given line number */
+/* add_error — append new error (line + message) */
 void add_error(ErrorList *list, int line, const char *msg);
 
-/* Print and clear all errors */
+/* print_and_clear_errors — dump errors and free list */
 void print_and_clear_errors(ErrorList *list);
 
 #endif

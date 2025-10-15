@@ -1,3 +1,8 @@
+/* second_pass.h
+ * Re-encodes instructions, resolves fixups with symbol table,
+ * and writes output files (.ob/.ent/.ext).
+ */
+ 
 #ifndef SECOND_PASS_H
 #define SECOND_PASS_H
 
@@ -9,12 +14,9 @@
 #define MAX_LINE_LENGTH 80
 #endif
 
-/* Perform second pass:
-   - runs first pass to populate *symbols and data image
-   - encodes code and records fixups
-   - resolves fixups using *symbols */
+/* second_pass — encode code, resolve symbols, write outputs */
 int second_pass(const char *filename, Symbol **symbols,
                 MemoryImage *mem, ErrorList *errors);
 
-#endif
+#endif /* SECOND_PASS_H */
 

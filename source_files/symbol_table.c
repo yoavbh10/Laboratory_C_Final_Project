@@ -1,12 +1,19 @@
+/* symbol_table.c
+ * Manages linked-list of symbols (labels, extern, entry).
+ * Supports add, lookup, print, and free.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "symbol_table.h"
 
+/* init_symbol_table — initialize table to empty */
 void init_symbol_table(Symbol **head) {
     if (head) *head = NULL;
 }
 
+/* add_symbol — append a new symbol to the table */
 int add_symbol(Symbol **head, const char *name, int address, SymbolType type)
 {
     Symbol *new_symbol = (Symbol *)malloc(sizeof(Symbol));
@@ -35,6 +42,7 @@ int add_symbol(Symbol **head, const char *name, int address, SymbolType type)
     return 1;
 }
 
+/* find_symbol — return pointer to symbol by name, or NULL */
 Symbol *find_symbol(Symbol *head, const char *name)
 {
     while (head) {
@@ -45,6 +53,7 @@ Symbol *find_symbol(Symbol *head, const char *name)
     return NULL;
 }
 
+/* print_symbol_table — debug print of all symbols */
 void print_symbol_table(Symbol *head)
 {
     while (head) {
@@ -56,6 +65,7 @@ void print_symbol_table(Symbol *head)
     }
 }
 
+/* free_symbol_table — free all nodes and reset head */
 void free_symbol_table(Symbol **head)
 {
     Symbol *curr = *head;

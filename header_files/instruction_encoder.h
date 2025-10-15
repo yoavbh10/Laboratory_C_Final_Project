@@ -1,3 +1,8 @@
+/* instruction_encoder.h
+ * Encodes assembly instructions into machine code words.
+ * Used during second pass to fill memory image.
+ */
+ 
 #ifndef INSTRUCTION_ENCODER_H
 #define INSTRUCTION_ENCODER_H
 
@@ -11,14 +16,12 @@
 
 #define MAX_TOKENS 10
 
-/* Encodes one instruction line into the memory image.
-   Returns 1 on success, 0 on error.
-   Safe to call on non-instruction lines (returns 1 and does nothing). */
+/* encode_instruction — encodes one assembly line into memory image */
 int encode_instruction(const char *line,
                        Symbol *symbols,
                        MemoryImage *mem,
                        ErrorList *errors,
                        int line_num);
 
-#endif
+#endif /* INSTRUCTION_ENCODER_H */
 

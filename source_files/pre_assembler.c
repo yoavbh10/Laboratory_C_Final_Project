@@ -1,15 +1,7 @@
-/* pre_assembler.c — ANSI C (C90)
-   Minimal macro expander:
-   mcro NAME
-     <body lines...>
-   endmcro   (also accepts "mcroend")
-   Usage lines that are exactly "NAME" expand to the stored body.
-
-   Changes:
-   - Output file extension is ".am" (spec).
-   - Enforce 80-char line length (excluding newline) with errors.
-   - Forbid macro names that collide with instructions, directives, or registers.
-*/
+/* pre_assembler.c
+ * Macro expander: collects mcro/endmcro blocks and expands calls into .am.
+ * Enforces 80-char logical lines; blocks reserved names (opcodes/regs/dirs).
+ */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -39,22 +31,32 @@ static Macro g_macros[MAX_MACROS];
 static int   g_macro_count = 0;
 
 /* -------- small utils -------- */
+
+/* lstrip — skip leading spaces */
 static char *lstrip(char *s) { while (*s && isspace((unsigned char)*s)) s++; return s; }
+
+/* rstrip_inplace — trim trailing spaces/newlines */
 static void rstrip_inplace(char *s) {
     size_t n = strlen(s);
     while (n && (s[n-1]=='\n' || s[n-1]=='\r' || isspace((unsigned char)s[n-1]))) s[--n] = '\0';
 }
+
+/* trim_inplace — strip both ends */
 static void trim_inplace(char *s) { char *ls = lstrip(s); if (ls != s) memmove(s, ls, strlen(ls)+1); rstrip_inplace(s); }
 
+/* is_register_name — r0..r7 */
 static int is_register_name(const char *s) {
     return s && s[0]=='r' && s[1]>='0' && s[1]<='7' && s[2]=='\0';
 }
+
+/* is_directive_tok — assembler directives we treat as reserved */
 static int is_directive_tok(const char *tok){
     return strcmp(tok,".data")==0 || strcmp(tok,".string")==0 ||
            strcmp(tok,".extern")==0 || strcmp(tok,".entry")==0 ||
            strcmp(tok,".mat")==0;
 }
 
+/* is_valid_macro_name — letters/digits, not reserved by ISA/dirs/regs */
 static int is_valid_macro_name(const char *name) {
     size_t i, n = strlen(name);
     if (n == 0 || n >= MAX_MACRO_NAME) return 0;
@@ -67,13 +69,18 @@ static int is_valid_macro_name(const char *name) {
     return 1;
 }
 
+/* lb_init — init line buffer */
 static void lb_init(LineBuf *b) { b->lines = NULL; b->count = 0; b->cap = 0; }
+
+/* lb_free — free all owned strings */
 static void lb_free(LineBuf *b) {
     int i;
     for (i = 0; i < b->count; i++) free(b->lines[i]);
     free(b->lines);
     b->lines = NULL; b->count = b->cap = 0;
 }
+
+/* lb_push — append a copy of line */
 static int lb_push(LineBuf *b, const char *line) {
     int newcap;
     char *copy;
@@ -90,12 +97,14 @@ static int lb_push(LineBuf *b, const char *line) {
     return 1;
 }
 
+/* macros_reset — clear collected macros */
 static void macros_reset(void) {
     int i;
     for (i = 0; i < g_macro_count; i++) lb_free(&g_macros[i].body);
     g_macro_count = 0;
 }
 
+/* macro_index_by_name — lookup macro slot */
 static int macro_index_by_name(const char *name) {
     int i;
     for (i = 0; i < g_macro_count; i++) {
@@ -104,7 +113,7 @@ static int macro_index_by_name(const char *name) {
     return -1;
 }
 
-/* derive "<src>.am" */
+/* make_out_path — derive "<src>.am" */
 static void make_out_path(const char *src, char *out, size_t out_sz) {
     size_t i, n, last_dot = (size_t)-1;
 
@@ -126,7 +135,7 @@ static void make_out_path(const char *src, char *out, size_t out_sz) {
     if (strlen(out) + 3 + 1 < out_sz) strcat(out, ".am");
 }
 
-/* Enforce 80-char (logical) line length */
+/* check_line_length — enforce 80-char (logical) */
 static void check_line_length(const char *line, int line_no, ErrorList *errors) {
     size_t raw_len = strcspn(line, "\r\n");
     if (raw_len > MAX_LINE_LENGTH) {
@@ -136,7 +145,7 @@ static void check_line_length(const char *line, int line_no, ErrorList *errors) 
 
 /* -------- parsing & expansion -------- */
 
-/* Pass 1: collect macros into g_macros; report duplicates, nested, missing end */
+/* collect_macros — scan file and store bodies of mcro blocks */
 static int collect_macros(FILE *fp, ErrorList *errors) {
     char line[BUF_LINE_LEN];
     int line_no = 0;
@@ -199,7 +208,7 @@ static int collect_macros(FILE *fp, ErrorList *errors) {
     return 1;
 }
 
-/* Expand: copy src->out, skipping macro definitions; replace lines that equal macro name */
+/* expand_to — copy src->out, skip defs, expand exact-name macro calls */
 static int expand_to(FILE *fp_in, FILE *fp_out, ErrorList *errors) {
     char line[BUF_LINE_LEN];
     int line_no = 0;
@@ -259,6 +268,8 @@ static int expand_to(FILE *fp_in, FILE *fp_out, ErrorList *errors) {
 }
 
 /* -------- public API -------- */
+
+/* pre_assemble — run collect+expand, produce .am next to src */
 int pre_assemble(const char *src_path,
                  char *out_path, size_t out_path_sz,
                  ErrorList *errors)

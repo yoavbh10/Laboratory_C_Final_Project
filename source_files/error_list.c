@@ -1,14 +1,18 @@
+/* error_list.c
+ * Simple linked list of errors (line + message).
+ * Add errors during passes; print and clear at the end.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "error_list.h"
 
-/* Initialize an empty error list */
+/* init_error_list — set head to NULL */
 void init_error_list(ErrorList *list) {
     list->head = NULL;
 }
 
-/* Add an error node to the list */
+/* add_error — push one error node (line, message) */
 void add_error(ErrorList *list, int line, const char *msg) {
     ErrorNode *new_node = (ErrorNode *)malloc(sizeof(ErrorNode));
     if (!new_node)
@@ -21,7 +25,7 @@ void add_error(ErrorList *list, int line, const char *msg) {
     list->head = new_node;
 }
 
-/* Print all errors and clear list */
+/* print_and_clear_errors — dump all errors and free nodes */
 void print_and_clear_errors(ErrorList *list) {
     ErrorNode *curr = list->head;
     if (!curr) {

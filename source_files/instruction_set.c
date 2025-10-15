@@ -1,3 +1,8 @@
+/* instruction_set.c
+ * Defines the instruction table (opcodes, operands, addressing rules).
+ * Provides lookup and debug helpers for instructions.
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include "instruction_set.h"
@@ -5,31 +10,10 @@
 
 /*
   Addressing-mode index order (must match all other modules):
-    index 0 = ADDR_IMMEDIATE
-    index 1 = ADDR_DIRECT
-    index 2 = ADDR_MATRIX
-    index 3 = ADDR_REGISTER
-
-  Legality table per spec:
-
-  Op   src allowed       dst allowed
-  ---- ----------------- -----------------
-  mov: imm,dir,mat,reg   dir,mat,reg
-  cmp: imm,dir,mat,reg   imm,dir,mat,reg
-  add: imm,dir,mat,reg   dir,mat,reg
-  sub: imm,dir,mat,reg   dir,mat,reg
-  lea:      dir,mat          dir,mat,reg
-  clr:         —             dir,mat,reg
-  not:         —             dir,mat,reg
-  inc:         —             dir,mat,reg
-  dec:         —             dir,mat,reg
-  jmp:         —             dir,mat,reg
-  bne:         —             dir,mat,reg
-  jsr:         —             dir,mat,reg
-  red:         —             dir,mat,reg
-  prn:         —          imm,dir,mat,reg
-  rts:         —                 —
-  stop:        —                 —
+    0 = ADDR_IMMEDIATE
+    1 = ADDR_DIRECT
+    2 = ADDR_MATRIX
+    3 = ADDR_REGISTER
 */
 
 /* name, opcode, allowed_src[4], allowed_dst[4], operands */
@@ -53,6 +37,7 @@ static Instruction instructions[NUM_OPCODES] = {
     {"stop", 15, { 0,  0,  0,  0 }, { 0,  0,  0,  0 }, 0}
 };
 
+/* find_instruction — lookup instruction by name */
 const Instruction* find_instruction(const char *name) {
     int i;
     for (i = 0; i < NUM_OPCODES; i++) {
@@ -62,6 +47,7 @@ const Instruction* find_instruction(const char *name) {
     return NULL;
 }
 
+/* print_instruction_table — debug print of instruction set */
 void print_instruction_table(void) {
     int i;
     for (i = 0; i < NUM_OPCODES; i++) {
@@ -70,6 +56,7 @@ void print_instruction_table(void) {
     }
 }
 
+/* get_opcode — return opcode for mnemonic, or -1 if unknown */
 int get_opcode(const char *mnemonic) {
     int i;
     for (i = 0; i < NUM_OPCODES; i++) {
