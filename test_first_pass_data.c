@@ -4,7 +4,7 @@
 #include "memory_image.h"
 #include "error_list.h"
 
-int main(void) {
+int main() {
     Symbol *symbols = NULL;
     MemoryImage mem;
     ErrorList errors;
@@ -30,8 +30,8 @@ int main(void) {
     for (i = 0; i < mem.DC; i++)
         printf("  [%d] %d\n", i, mem.data[i]);
 
-    free_symbol_table(&symbols);
     print_and_clear_errors(&errors);
+    free_symbol_table(&symbols);
     return 0;
 }
 

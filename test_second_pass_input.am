@@ -1,0 +1,6 @@
+; Test for second pass with .entry and .extern
+MAIN:   mov r1, r2
+.entry MAIN
+.extern EXT_LABEL
+stop
+

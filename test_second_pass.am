@@ -1,0 +1,7 @@
+.entry MAIN
+.extern EXT_LABEL
+
+MAIN:   mov r1, EXT_LABEL
+        add r2, MAIN
+        stop
+

@@ -40,3 +40,12 @@ void print_instruction_table(void) {
     }
 }
 
+int get_opcode(const char *mnemonic) {
+    int i;
+    for (i = 0; i < NUM_OPCODES; i++) {
+        if (strcmp(instructions[i].name, mnemonic) == 0)
+            return instructions[i].opcode;
+    }
+    return -1; /* unknown mnemonic */
+}
+

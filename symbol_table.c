@@ -3,29 +3,36 @@
 #include <string.h>
 #include "symbol_table.h"
 
-int add_symbol(Symbol **head, const char *name, int address, SymbolType type) {
+int add_symbol(Symbol **head, const char *name, int address, SymbolType type)
+{
     Symbol *new_symbol = (Symbol *)malloc(sizeof(Symbol));
-    Symbol *temp;
+    Symbol *current;
 
-    if (!new_symbol) return 0;
+    if (!new_symbol)
+        return 0;
 
-    strncpy(new_symbol->name, name, MAX_LABEL_LEN - 1);
-    new_symbol->name[MAX_LABEL_LEN - 1] = '\0';
+    strcpy(new_symbol->name, name);
     new_symbol->address = address;
     new_symbol->type = type;
+    new_symbol->is_entry = 0;
+    new_symbol->is_extern = 0;
     new_symbol->next = NULL;
 
-    if (!(*head)) {
+    if (*head == NULL) {
         *head = new_symbol;
-    } else {
-        temp = *head;
-        while (temp->next) temp = temp->next;
-        temp->next = new_symbol;
+        return 1;
     }
+
+    current = *head;
+    while (current->next)
+        current = current->next;
+    current->next = new_symbol;
+
     return 1;
 }
 
-Symbol *find_symbol(Symbol *head, const char *name) {
+Symbol *find_symbol(Symbol *head, const char *name)
+{
     while (head) {
         if (strcmp(head->name, name) == 0)
             return head;
@@ -34,22 +41,22 @@ Symbol *find_symbol(Symbol *head, const char *name) {
     return NULL;
 }
 
-void print_symbol_table(Symbol *head) {
+void print_symbol_table(Symbol *head)
+{
     while (head) {
-        const char *type_str = 
-            head->type == SYMBOL_CODE ? "CODE" :
-            (head->type == SYMBOL_DATA ? "DATA" : "EXTERNAL");
-        printf("Symbol: %-32s Address: %4d  Type: %s\n",
-               head->name, head->address, type_str);
+        printf("Symbol: %-32s Address:%6d  Type:%-6s Entry:%d Extern:%d\n",
+               head->name, head->address,
+               head->type == SYMBOL_CODE ? "CODE" : "DATA",
+               head->is_entry, head->is_extern);
         head = head->next;
     }
 }
 
-void free_symbol_table(Symbol **head) {
+void free_symbol_table(Symbol **head)
+{
     Symbol *curr = *head;
-    Symbol *temp;
     while (curr) {
-        temp = curr;
+        Symbol *temp = curr;
         curr = curr->next;
         free(temp);
     }

@@ -27,5 +27,8 @@ const Instruction* find_instruction(const char *name);
 /* Debug: print all instructions */
 void print_instruction_table(void);
 
+/* Return opcode for given mnemonic, or -1 if unknown */
+int get_opcode(const char *mnemonic);
+
 #endif
 

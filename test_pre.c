@@ -4,6 +4,7 @@
 
 int main() {
     ErrorList errors;
+
     init_error_list(&errors);
 
     if (!pre_assembler("test_macros.as", &errors)) {

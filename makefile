@@ -55,6 +55,13 @@ test_first_pass_entry: test_first_pass_entry.c first_pass.c symbol_table.c memor
 	    error_list.c instruction_set.c \
 	    -o test_first_pass_entry
 
+test_second_pass: test_second_pass.c second_pass.c instruction_encoder.c output_files.c \
+                  symbol_table.c memory_image.c error_list.c instruction_set.c
+	gcc -ansi -pedantic -Wall -Wextra \
+        test_second_pass.c second_pass.c instruction_encoder.c output_files.c \
+        symbol_table.c memory_image.c error_list.c instruction_set.c \
+        -o test_second_pass
+
 clean:
 	rm -f assembler test_pre test_symbol_table *.o *.am
 

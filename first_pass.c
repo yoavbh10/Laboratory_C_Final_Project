@@ -97,9 +97,12 @@ int first_pass(const char *filename, Symbol **symtab, MemoryImage *mem, ErrorLis
             char extern_name[MAX_LABEL_LEN];
             sscanf(p + 7, "%s", extern_name);
             if (extern_name[0] != '\0') {
-                if (!add_symbol(symtab, extern_name, 0, SYMBOL_EXTERNAL)) {
-                    add_error(errors, line_num, "Failed to add external symbol");
-                }
+                if (!add_symbol(symtab, extern_name, 0, SYMBOL_CODE)) {
+				    add_error(errors, line_num, "Failed to add external symbol");
+				} else {
+				    Symbol *ext = find_symbol(*symtab, extern_name);
+				    if (ext) ext->is_extern = 1;
+				}
             } else {
                 add_error(errors, line_num, "Missing symbol name after .extern");
             }

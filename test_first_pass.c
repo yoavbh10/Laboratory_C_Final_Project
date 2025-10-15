@@ -4,16 +4,16 @@
 #include "memory_image.h"
 #include "error_list.h"
 
-int main(void) {
+int main() {
     Symbol *symbols = NULL;
     MemoryImage mem;
     ErrorList errors;
-    init_error_list(&errors);
 
+    init_error_list(&errors);
     init_memory_image(&mem);
 
     if (!first_pass("test_macros.am", &symbols, &mem, &errors)) {
-        printf("First pass failed.\n");
+        printf("Failed to read source file.\n");
         print_and_clear_errors(&errors);
         return 1;
     }
@@ -21,9 +21,9 @@ int main(void) {
     printf("First pass completed.\n");
     print_symbol_table(symbols);
     print_memory_image(&mem);
+    print_and_clear_errors(&errors);
 
     free_symbol_table(&symbols);
-    print_and_clear_errors(&errors);
     return 0;
 }
 

@@ -1,0 +1,4 @@
+MAIN:   mov r1, EXT_LABEL
+.entry MAIN
+.extern EXT_LABEL
+stop

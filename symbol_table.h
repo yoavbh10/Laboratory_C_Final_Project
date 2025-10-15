@@ -5,14 +5,15 @@
 
 typedef enum {
     SYMBOL_CODE,
-    SYMBOL_DATA,
-    SYMBOL_EXTERNAL
+    SYMBOL_DATA
 } SymbolType;
 
 typedef struct Symbol {
     char name[MAX_LABEL_LEN];
     int address;
     SymbolType type;
+    int is_entry;
+    int is_extern;
     struct Symbol *next;
 } Symbol;
 
