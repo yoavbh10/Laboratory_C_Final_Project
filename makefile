@@ -4,11 +4,11 @@ assembler: main.c pre_assembler.c macro_table.c \
 	    main.c pre_assembler.c macro_table.c \
 	    -o assembler
 
-test_pre: test_pre.c pre_assembler.c macro_table.c \
-          pre_assembler.h macro_table.h
+test_pre: test_pre.c pre_assembler.c macro_table.c error_list.c
 	gcc -ansi -pedantic -Wall -Wextra \
-	    test_pre.c pre_assembler.c macro_table.c \
+	    test_pre.c pre_assembler.c macro_table.c error_list.c \
 	    -o test_pre
+
 
 test_symbol_table: test_symbol_table.c symbol_table.c \
                    symbol_table.h
@@ -46,6 +46,14 @@ test_first_pass_data: test_first_pass_data.c first_pass.c symbol_table.c memory_
 	    test_first_pass_data.c first_pass.c symbol_table.c memory_image.c \
 	    error_list.c instruction_set.c \
 	    -o test_first_pass_data
+
+test_first_pass_entry: test_first_pass_entry.c first_pass.c symbol_table.c memory_image.c \
+                       error_list.c instruction_set.c \
+                       first_pass.h symbol_table.h memory_image.h error_list.h instruction_set.h
+	gcc -ansi -pedantic -Wall -Wextra \
+	    test_first_pass_entry.c first_pass.c symbol_table.c memory_image.c \
+	    error_list.c instruction_set.c \
+	    -o test_first_pass_entry
 
 clean:
 	rm -f assembler test_pre test_symbol_table *.o *.am

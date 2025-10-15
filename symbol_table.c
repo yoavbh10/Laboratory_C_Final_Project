@@ -3,14 +3,26 @@
 #include <string.h>
 #include "symbol_table.h"
 
-void add_symbol(Symbol **head, const char *name, int address, SymbolType type) {
+int add_symbol(Symbol **head, const char *name, int address, SymbolType type) {
     Symbol *new_symbol = (Symbol *)malloc(sizeof(Symbol));
+    Symbol *temp;
+
+    if (!new_symbol) return 0;
+
     strncpy(new_symbol->name, name, MAX_LABEL_LEN - 1);
     new_symbol->name[MAX_LABEL_LEN - 1] = '\0';
     new_symbol->address = address;
     new_symbol->type = type;
-    new_symbol->next = *head;
-    *head = new_symbol;
+    new_symbol->next = NULL;
+
+    if (!(*head)) {
+        *head = new_symbol;
+    } else {
+        temp = *head;
+        while (temp->next) temp = temp->next;
+        temp->next = new_symbol;
+    }
+    return 1;
 }
 
 Symbol *find_symbol(Symbol *head, const char *name) {
@@ -22,31 +34,25 @@ Symbol *find_symbol(Symbol *head, const char *name) {
     return NULL;
 }
 
-void free_symbol_table(Symbol *head) {
-    while (head) {
-        Symbol *temp = head;
-        head = head->next;
-        free(temp);
-    }
-}
-
 void print_symbol_table(Symbol *head) {
     while (head) {
-        const char *type_str = (head->type == SYMBOL_CODE) ? "CODE" :
-                               (head->type == SYMBOL_DATA) ? "DATA" : "EXTERNAL";
+        const char *type_str = 
+            head->type == SYMBOL_CODE ? "CODE" :
+            (head->type == SYMBOL_DATA ? "DATA" : "EXTERNAL");
         printf("Symbol: %-32s Address: %4d  Type: %s\n",
                head->name, head->address, type_str);
         head = head->next;
     }
 }
 
-/* NEW: adjust all data symbols to be offset by final IC */
-void adjust_data_symbol_addresses(Symbol *head, int ic_offset) {
-    while (head) {
-        if (head->type == SYMBOL_DATA) {
-            head->address += ic_offset;
-        }
-        head = head->next;
+void free_symbol_table(Symbol **head) {
+    Symbol *curr = *head;
+    Symbol *temp;
+    while (curr) {
+        temp = curr;
+        curr = curr->next;
+        free(temp);
     }
+    *head = NULL;
 }
 

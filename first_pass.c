@@ -7,6 +7,11 @@
 #include "memory_image.h"
 #include "error_list.h"
 
+/* Track entry symbols for second pass */
+#define MAX_ENTRY_COUNT 50
+static char entry_symbols[MAX_ENTRY_COUNT][MAX_LABEL_LEN];
+static int entry_count = 0;
+
 /* Handle .data directive */
 static void handle_data(MemoryImage *mem, const char *params)
 {
@@ -15,7 +20,6 @@ static void handle_data(MemoryImage *mem, const char *params)
     char *endptr;
     long val;
 
-    /* make a copy of params because strtok modifies it */
     copy = (char *)malloc(strlen(params) + 1);
     if (!copy)
         return;
@@ -77,23 +81,50 @@ int first_pass(const char *filename, Symbol **symtab, MemoryImage *mem, ErrorLis
             }
         }
 
+        /* --- Directive / Instruction handling --- */
         if (strncmp(p, ".data", 5) == 0) {
             if (label[0])
                 add_symbol(symtab, label, mem->DC, SYMBOL_DATA);
             handle_data(mem, p + 5);
+
         } else if (strncmp(p, ".string", 7) == 0) {
             if (label[0])
                 add_symbol(symtab, label, mem->DC, SYMBOL_DATA);
             handle_string(mem, p + 7);
+
         } else if (strncmp(p, ".extern", 7) == 0) {
             /* extern symbol */
+            char extern_name[MAX_LABEL_LEN];
+            sscanf(p + 7, "%s", extern_name);
+            if (extern_name[0] != '\0') {
+                if (!add_symbol(symtab, extern_name, 0, SYMBOL_EXTERNAL)) {
+                    add_error(errors, line_num, "Failed to add external symbol");
+                }
+            } else {
+                add_error(errors, line_num, "Missing symbol name after .extern");
+            }
+
         } else if (strncmp(p, ".entry", 6) == 0) {
-            /* entry symbol, handled in second pass */
+            /* entry symbol (stored for second pass) */
+            char entry_name[MAX_LABEL_LEN];
+            sscanf(p + 6, "%s", entry_name);
+            if (entry_name[0] != '\0') {
+                if (entry_count < MAX_ENTRY_COUNT) {
+                    strncpy(entry_symbols[entry_count], entry_name, MAX_LABEL_LEN - 1);
+                    entry_symbols[entry_count][MAX_LABEL_LEN - 1] = '\0';
+                    entry_count++;
+                } else {
+                    add_error(errors, line_num, "Too many entry symbols");
+                }
+            } else {
+                add_error(errors, line_num, "Missing symbol name after .entry");
+            }
+
         } else {
             /* instruction placeholder */
             if (label[0])
                 add_symbol(symtab, label, mem->IC, SYMBOL_CODE);
-            add_code_word(mem, 0); /* placeholder */
+            add_code_word(mem, 0); /* placeholder instruction */
         }
     }
 

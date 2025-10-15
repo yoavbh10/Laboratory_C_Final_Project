@@ -1,32 +1,28 @@
 #ifndef ERROR_LIST_H
 #define ERROR_LIST_H
 
-/* A single error node */
+#define ERROR_MSG_LEN 100
+
+/* Node representing a single error */
 typedef struct ErrorNode {
     int line;
-    char message[100];
+    char message[ERROR_MSG_LEN];
     struct ErrorNode *next;
 } ErrorNode;
 
-/* Head of linked list */
+/* Container for all errors */
 typedef struct {
     ErrorNode *head;
 } ErrorList;
 
-/* Initialize an empty error list */
+/* Initialize an error list */
 void init_error_list(ErrorList *list);
 
-/* Add an error (line number + message) */
+/* Add an error message for a given line number */
 void add_error(ErrorList *list, int line, const char *msg);
 
-/* Check if there are any errors (1 if yes, 0 if none) */
-int has_errors(const ErrorList *list);
-
-/* Print all errors and clear the list */
+/* Print and clear all errors */
 void print_and_clear_errors(ErrorList *list);
-
-/* Free all error nodes without printing */
-void free_error_list(ErrorList *list);
 
 #endif
 
