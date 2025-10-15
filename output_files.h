@@ -1,12 +1,19 @@
 #ifndef OUTPUT_FILES_H
 #define OUTPUT_FILES_H
 
-#include "symbol_table.h"
 #include "memory_image.h"
+#include "symbol_table.h"
 
-int write_entry_file(const char *base_filename, Symbol *symbols);
-int write_extern_file(const char *base_filename, Symbol *symbols);
-int write_object_file(const char *base_filename, MemoryImage *mem);
+/* Reset recorded extern uses (call before assembling a new file). */
+void of_reset(void);
 
-#endif
+/* Record one extern use at logical code address 'addr'. */
+void of_record_extern_use(const char *name, int addr);
+
+/* Write .ob / .ent / .ext using a base derived from src_filename (strips .am/.amx). */
+void write_output_files(const char *src_filename,
+                        const MemoryImage *mem,
+                        const Symbol *symbols);
+
+#endif /* OUTPUT_FILES_H */
 
