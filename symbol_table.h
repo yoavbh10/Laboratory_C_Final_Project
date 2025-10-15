@@ -17,6 +17,9 @@ typedef struct Symbol {
     struct Symbol *next;
 } Symbol;
 
+/* Initialize a symbol table head pointer to NULL */
+void init_symbol_table(Symbol **head);
+
 int add_symbol(Symbol **head, const char *name, int address, SymbolType type);
 Symbol *find_symbol(Symbol *head, const char *name);
 void print_symbol_table(Symbol *head);

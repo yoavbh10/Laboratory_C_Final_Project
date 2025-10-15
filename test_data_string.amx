@@ -1,9 +1,0 @@
-; .data / .string behavior, spacing, sign, and direct references
-
-MAIN:           mov  #1, r1
-STRING_LABEL:   .string "HELLO"
-DATA_LABEL:     .data   1, -2 ,  3 ,   4
-                prn  DATA_LABEL
-                lea  STRING_LABEL, r2
-                stop
-

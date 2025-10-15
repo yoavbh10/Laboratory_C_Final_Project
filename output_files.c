@@ -37,7 +37,7 @@ static void to_base4_letters(unsigned int n, int width, char *out)
     int i;
     for (i = width - 1; i >= 0; --i) {
         out[i] = digits[n & 3u];
-        n >>= 2;
+        n >>= 2u;
     }
     out[width] = '\0';
 }
@@ -90,12 +90,12 @@ void write_output_files(const char *src_filename,
 
     derive_base_name(src_filename, base, sizeof(base));
 
-    /* Build paths (ANSI C: use sprintf) */
+    /* Build paths */
     sprintf(path_ob,  "%s.ob",  base);
     sprintf(path_ent, "%s.ent", base);
     sprintf(path_ext, "%s.ext", base);
 
-    /* Sizes */
+    /* Sizes: IC and DC are counts already */
     code_size = mem->IC;
     if (code_size < 0) code_size = 0;
     if (code_size > MAX_CODE_SIZE) code_size = MAX_CODE_SIZE;
@@ -108,7 +108,7 @@ void write_output_files(const char *src_filename,
     fob = fopen(path_ob, "w");
     if (!fob) return;
 
-    /* header as base-4 letters (5 digits each to be safe) */
+    /* header as base-4 (5 digits each) */
     {
         char b4_code[6], b4_data[6];
         to_base4_letters((unsigned int)code_size, 5, b4_code);
@@ -116,7 +116,7 @@ void write_output_files(const char *src_filename,
         fprintf(fob, "%s %s\n", b4_code, b4_data);
     }
 
-    /* code words at 100..IC-1 */
+    /* code words at addresses 100.. */
     for (i = 0; i < code_size; ++i) {
         int abs_addr = 100 + i;
         char a4[5], w5[6];
@@ -125,7 +125,7 @@ void write_output_files(const char *src_filename,
         fprintf(fob, "%s %s\n", a4, w5);
     }
 
-    /* data words follow code */
+    /* data words appended after code */
     for (i = 0; i < data_size; ++i) {
         int abs_addr = 100 + code_size + i;
         char a4[5], w5[6];
@@ -136,7 +136,7 @@ void write_output_files(const char *src_filename,
 
     fclose(fob);
 
-    /* .ent (only entries that are not extern) */
+    /* .ent (entries that are not extern) */
     fent = fopen(path_ent, "w");
     if (fent) {
         const Symbol *s = symbols;
@@ -153,7 +153,7 @@ void write_output_files(const char *src_filename,
         if (!wrote_ent) remove(path_ent);
     }
 
-    /* .ext (each recorded extern use) */
+    /* .ext (each recorded extern use with its absolute address) */
     if (g_ext_use_count > 0) {
         fext = fopen(path_ext, "w");
         if (fext) {

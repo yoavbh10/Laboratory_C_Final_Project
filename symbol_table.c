@@ -3,6 +3,10 @@
 #include <string.h>
 #include "symbol_table.h"
 
+void init_symbol_table(Symbol **head) {
+    if (head) *head = NULL;
+}
+
 int add_symbol(Symbol **head, const char *name, int address, SymbolType type)
 {
     Symbol *new_symbol = (Symbol *)malloc(sizeof(Symbol));

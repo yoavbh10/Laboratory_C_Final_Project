@@ -11,7 +11,12 @@
 #include "memory_image.h"
 #include "addressing_modes.h"
 
-/* Logical base for code addresses */
+/* Fallback if not coming from a shared header */
+#ifndef MAX_LINE_LENGTH
+#define MAX_LINE_LENGTH 80
+#endif
+
+/* Logical base for code addresses (used only for addresses printed elsewhere) */
 #define LOGICAL_BASE 100
 
 /* Bit layout (10-bit word):
@@ -168,24 +173,22 @@ static int pack_value_word(int value,int are){ return ((value & 0xFF)<<2) | (are
 static void emit_matrix_words(const char *operand, MemoryImage *mem, ErrorList *errors, int line_num) {
     char label[MAX_LABEL_LEN];
     int rr, cc;
-    (void)errors; (void)line_num;
 
     if (!enc_is_matrix(operand, label, &rr, &cc)) {
-        /* Parser should have validated already; be defensive */
         add_err(errors, line_num, "invalid matrix operand '%s'", operand);
         return;
     }
 
     /* word 1: address of label (to be fixed up with E/R) */
     {
-        int patch_addr = LOGICAL_BASE + mem->IC;
+        int word_index = mem->IC;   /* record the slot to patch */
         add_code_word(mem, 0);
-        add_fixup(mem, patch_addr, label, line_num);
+        add_fixup(mem, word_index, label, line_num);
     }
 
-    /* word 2: packed regs (row in 6..9, col in 2..5) + ARE=A */
+    /* word 2: packed regs (row in bits 6..9, col in 2..5) + ARE=A */
     {
-        int w = ((rr & 0x7) << 5) | ((cc & 0x7) << 2) | ARE_A;
+        int w = ((rr & 0x7) << 6) | ((cc & 0x7) << 2) | ARE_A;
         add_code_word(mem, w);
     }
 }
@@ -263,10 +266,12 @@ int encode_instruction(const char *line,
         nops = split_commas_inplace(opsbuf, ops, 2);
         for (i = 0; i < nops; i++) trim_inplace(ops[i]);
 
+        /* lenient clamp for single-operand mnemonics */
         if (instr->operands == 1 && nops > 1) nops = 1;
 
         operand_count = nops;
 
+        /* validate operand count */
         if (instr->operands != operand_count) {
             char msg[96];
             sprintf(msg, "Operand count mismatch for %s (expected %d, got %d)",
@@ -287,7 +292,7 @@ int encode_instruction(const char *line,
         /* 1 operand (destination) */
         if (operand_count == 1) {
             int base;
-            int dst_r, patch_addr;
+            int dst_r, word_index;
             long val;
             int dst_mode;
 
@@ -304,14 +309,15 @@ int encode_instruction(const char *line,
 
             if (dst_mode == ADDR_REGISTER) {
                 dst_r = op1s[1] - '0';
-                add_code_word(mem, ((dst_r & 0x7) << 5) | ARE_A);
+                /* DEST register in bits 2..5 */
+                add_code_word(mem, ((dst_r & 0x7) << 2) | ARE_A);
             } else if (dst_mode == ADDR_IMMEDIATE) {
                 val = strtol(op1s + 1, NULL, 10);
                 add_code_word(mem, pack_value_word((int)val, ARE_A));
             } else if (dst_mode == ADDR_DIRECT) {
-                patch_addr = LOGICAL_BASE + mem->IC;
+                word_index = mem->IC;
                 add_code_word(mem, 0);
-                add_fixup(mem, patch_addr, op1s, line_num);
+                add_fixup(mem, word_index, op1s, line_num);
             } else { /* ADDR_MATRIX */
                 emit_matrix_words(op1s, mem, errors, line_num);
             }
@@ -340,41 +346,43 @@ int encode_instruction(const char *line,
 
         add_code_word(mem, pack_base_word(instr->opcode, src_mode, dst_mode));
 
-        /* Special case: both registers share one word */
+        /* reg-reg packs into one word: SRC→bits 6–9, DST→bits 2–5 */
         if (src_mode == ADDR_REGISTER && dst_mode == ADDR_REGISTER) {
             int sr = op0s[1] - '0';
             int dr = op1s[1] - '0';
-            add_code_word(mem, ((sr & 0x7) << 5) | ((dr & 0x7) << 2) | ARE_A);
+            add_code_word(mem, ((sr & 0x7) << 6) | ((dr & 0x7) << 2) | ARE_A);
             free(opsbuf);
             return 1;
         }
 
-        /* source extra(s) */
+        /* source extra word(s) */
         if (src_mode == ADDR_REGISTER) {
             int r = op0s[1] - '0';
-            add_code_word(mem, ((r & 0x7) << 5) | ARE_A);
+            /* SRC register in bits 6..9 */
+            add_code_word(mem, ((r & 0x7) << 6) | ARE_A);
         } else if (src_mode == ADDR_IMMEDIATE) {
             long v = strtol(op0s + 1, NULL, 10);
             add_code_word(mem, pack_value_word((int)v, ARE_A));
         } else if (src_mode == ADDR_DIRECT) {
-            int patch_addr = LOGICAL_BASE + mem->IC;
+            int word_index = mem->IC;
             add_code_word(mem, 0);
-            add_fixup(mem, patch_addr, op0s, line_num);
+            add_fixup(mem, word_index, op0s, line_num);
         } else { /* ADDR_MATRIX */
             emit_matrix_words(op0s, mem, errors, line_num);
         }
 
-        /* destination extra(s) */
+        /* destination extra word(s) */
         if (dst_mode == ADDR_REGISTER) {
             int r = op1s[1] - '0';
-            add_code_word(mem, ((r & 0x7) << 5) | ARE_A);
+            /* DEST register in bits 2..5 */
+            add_code_word(mem, ((r & 0x7) << 2) | ARE_A);
         } else if (dst_mode == ADDR_IMMEDIATE) {
             long v = strtol(op1s + 1, NULL, 10);
             add_code_word(mem, pack_value_word((int)v, ARE_A));
         } else if (dst_mode == ADDR_DIRECT) {
-            int patch_addr = LOGICAL_BASE + mem->IC;
+            int word_index = mem->IC;
             add_code_word(mem, 0);
-            add_fixup(mem, patch_addr, op1s, line_num);
+            add_fixup(mem, word_index, op1s, line_num);
         } else { /* ADDR_MATRIX */
             emit_matrix_words(op1s, mem, errors, line_num);
         }

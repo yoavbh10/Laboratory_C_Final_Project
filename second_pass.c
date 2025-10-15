@@ -1,18 +1,21 @@
 /* second_pass.c — ANSI C (C90)
-   Pass 2: encode code image from the expanded file, resolve label fixups,
-   record extern uses, and write output files.
+   Pass 2:
+   - Re-encode the expanded source (instructions only) into mem->code
+   - Resolve fixups:
+       extern  -> ARE=E and record absolute address in .ext
+       internal-> ARE=R
+   - Write .ob/.ent/.ext in custom base-4
 */
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "second_pass.h"
+#include "instruction_encoder.h"
 #include "symbol_table.h"
 #include "memory_image.h"
 #include "error_list.h"
 #include "output_files.h"
-#include "instruction_encoder.h"
 
-/* Fallback ARE codes if not visible via other headers */
 #ifndef ARE_A
 #define ARE_A 0
 #endif
@@ -23,50 +26,79 @@
 #define ARE_R 2
 #endif
 
-/* Logical base address for code */
-#ifndef LOGICAL_BASE
-#define LOGICAL_BASE 100
-#endif
+#define LOGICAL_BASE       100
+#define MAX_LINE_LENGTH     80
 
-int second_pass(const char *filename, Symbol **symbols, MemoryImage *mem, ErrorList *errors)
+/* -------- tiny string helpers -------- */
+static void strip_comment(char *s){ for(;*s;++s){ if(*s==';'){*s='\0';break;} } }
+static char *lstrip(char *s){ while(*s && (*s==' '||*s=='\t')) ++s; return s; }
+static void rstrip_inplace(char *s){
+    size_t n = strlen(s);
+    while(n && (s[n-1]=='\n'||s[n-1]=='\r'||s[n-1]==' '||s[n-1]=='\t')) s[--n]='\0';
+}
+static void trim_inplace(char *s){ char *p=lstrip(s); if(p!=s) memmove(s,p,strlen(p)+1); rstrip_inplace(s); }
+
+/* Re-encode instructions from expanded file (amx) into mem->code */
+static int encode_instructions_from_file(const char *expanded_path,
+                                         Symbol *symbols,
+                                         MemoryImage *mem,
+                                         ErrorList *errors)
 {
-    FILE *fp;
+    FILE *fp = fopen(expanded_path, "r");
     char linebuf[1024];
     int line_no = 0;
-    int had_errors = 0;
+
+    if (!fp) { add_error(errors, 0, "cannot open expanded source for pass-2"); return 0; }
+
+    mem->IC = 0;            /* number of code words written */
+    mem->fixup_count = 0;   /* clear previous fixups */
+
+    while (fgets(linebuf, sizeof(linebuf), fp)) {
+        size_t raw_len;
+        char work[1024];
+        line_no++;
+
+        raw_len = strcspn(linebuf, "\r\n");
+        if (raw_len > MAX_LINE_LENGTH) add_error(errors, line_no, "line too long (> 80 chars)");
+
+        strcpy(work, linebuf);
+        strip_comment(work);
+        trim_inplace(work);
+        if (*work == '\0') continue;
+
+        /* Encode instruction; keep going even if it adds errors */
+        (void)encode_instruction(work, symbols, mem, errors, line_no);
+    }
+
+    fclose(fp);
+    return 1;
+}
+
+int second_pass(const char *expanded_filename, Symbol **symbols, MemoryImage *mem, ErrorList *errors)
+{
     int k;
+    int had_errors = 0;
 
-    if (!filename || !symbols || !*symbols || !mem || !errors) return 0;
-
-    /* fresh extern-use list */
-    of_init();
-
-    /* Rebuild the code image from the expanded file: reset IC and fixups */
-    mem->IC = 0;
-    mem->fixup_count = 0;
-
-    fp = fopen(filename, "r");
-    if (!fp) {
-        char msg[256];
-        sprintf(msg, "cannot open source '%s'", filename);
-        add_error(errors, 0, msg);
+    if (!expanded_filename || !symbols || !*symbols || !mem || !errors) {
+        add_error(errors, 0, "second_pass: invalid arguments");
         return 0;
     }
 
-    /* Encode instructions & collect fixups (data directives are ignored here) */
-    while (fgets(linebuf, sizeof(linebuf), fp)) {
-        line_no++;
-        /* encode_instruction appends code words & fixups; reports errors via errors */
-        (void)encode_instruction(linebuf, *symbols, mem, errors, line_no);
-    }
-    fclose(fp);
+    of_init(); /* reset extern-use list */
 
-    /* Resolve all recorded fixups (label references) */
+    /* 1) Encode instructions from expanded file into mem->code */
+    if (!encode_instructions_from_file(expanded_filename, *symbols, mem, errors)) {
+        return 0;
+    }
+
+    /* 2) Resolve fixups and patch code image */
     for (k = 0; k < mem->fixup_count; ++k) {
         Fixup *fx = &mem->fixups[k];
         const Symbol *sym = find_symbol(*symbols, fx->label);
+        int idx = fx->word_index;                 /* <-- matches your struct */
+        int abs_addr = LOGICAL_BASE + idx;        /* for .ext file */
         int are_bits;
-        int idx;
+        int patched;
 
         if (!sym) {
             char msg[256];
@@ -77,24 +109,24 @@ int second_pass(const char *filename, Symbol **symbols, MemoryImage *mem, ErrorL
         }
 
         if (sym->is_extern) {
-            are_bits = ARE_E;               /* external reference */
-            of_record_extern_use(sym->name, fx->address);
+            are_bits = ARE_E;
+            of_record_extern_use(sym->name, abs_addr);
         } else {
-            are_bits = ARE_R;               /* relocatable */
+            are_bits = ARE_R;
         }
 
-        /* Patch the word in the code image at absolute address fx->address */
-        idx = fx->address - LOGICAL_BASE;
         if (idx >= 0 && idx < MAX_CODE_SIZE) {
-            int value10 = sym->address & 0x3FF;   /* 10-bit payload */
-            mem->code[idx] = (value10 & ~0x3) | (are_bits & 0x3);
+            /* Value occupies the high 8 bits; ARE in low 2 bits. */
+            int value8 = (sym->address & 0xFF);
+            patched = (value8 << 2) | (are_bits & 0x3);
+            mem->code[idx] = patched;
         }
     }
 
     if (had_errors) return 0;
 
-    /* Emit output files (.ob/.ent/.ext) now that fixups are resolved */
-    write_output_files(filename, mem, *symbols);
+    /* 3) Emit outputs (.ob/.ent/.ext) */
+    write_output_files(expanded_filename, mem, *symbols);
     return 1;
 }
 
