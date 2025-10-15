@@ -1,17 +1,20 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "first_pass.h"
+#include "symbol_table.h"
+#include "memory_image.h"
+#include "error_list.h"
 
-int main(void)
-{
+int main() {
     Symbol *symbols = NULL;
     MemoryImage mem;
-	ErrorList errors;
-	init_error_list(&errors);
+    ErrorList errors;
 
     init_memory_image(&mem);
+    init_error_list(&errors);
 
-    if (!first_pass("test_data_string.am", &symbols, &mem, &errors))
-    {
+    if (!first_pass("test_data_string.am", &symbols, &mem, &errors)) {
+        printf("First pass failed.\n");
         print_and_clear_errors(&errors);
         return 1;
     }
@@ -22,20 +25,21 @@ int main(void)
     printf("Code Image (IC=%d):\n", mem.IC);
     {
         int i;
-        for (i = 100; i < mem.IC; i++)
+        for (i = 100; i < mem.IC; i++) {
             printf("  [%d] %d\n", i, mem.code[i - 100]);
+        }
     }
 
     printf("Data Image (DC=%d):\n", mem.DC);
     {
         int i;
-        for (i = 0; i < mem.DC; i++)
+        for (i = 0; i < mem.DC; i++) {
             printf("  [%d] %d\n", i, mem.data[i]);
+        }
     }
 
     free_symbol_table(symbols);
     print_and_clear_errors(&errors);
-
     return 0;
 }
 
