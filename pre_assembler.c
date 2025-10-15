@@ -4,6 +4,11 @@
      <body lines...>
    endmcro   (also accepts "mcroend")
    Usage lines that are exactly "NAME" expand to the stored body.
+
+   Changes:
+   - Output file extension is ".am" (spec).
+   - Enforce 80-char line length (excluding newline) with errors.
+   - Forbid macro names that collide with instructions, directives, or registers.
 */
 #include <stdio.h>
 #include <string.h>
@@ -12,10 +17,12 @@
 
 #include "pre_assembler.h"
 #include "error_list.h"
+#include "instruction_set.h" /* for find_instruction */
 
 #define MAX_MACROS       64
 #define MAX_MACRO_NAME   32
-#define MAX_LINE_LEN     256
+#define BUF_LINE_LEN     1024
+#define MAX_LINE_LENGTH  80   /* spec: max logical line length */
 
 typedef struct {
     char **lines;     /* body lines */
@@ -39,13 +46,24 @@ static void rstrip_inplace(char *s) {
 }
 static void trim_inplace(char *s) { char *ls = lstrip(s); if (ls != s) memmove(s, ls, strlen(ls)+1); rstrip_inplace(s); }
 
-static int is_valid_name(const char *name) {
+static int is_register_name(const char *s) {
+    return s && s[0]=='r' && s[1]>='0' && s[1]<='7' && s[2]=='\0';
+}
+static int is_directive_tok(const char *tok){
+    return strcmp(tok,".data")==0 || strcmp(tok,".string")==0 ||
+           strcmp(tok,".extern")==0 || strcmp(tok,".entry")==0 ||
+           strcmp(tok,".mat")==0;
+}
+
+static int is_valid_macro_name(const char *name) {
     size_t i, n = strlen(name);
     if (n == 0 || n >= MAX_MACRO_NAME) return 0;
     if (!isalpha((unsigned char)name[0])) return 0;
-    for (i = 1; i < n; i++) {
-        if (!isalnum((unsigned char)name[i]) && name[i] != '_') return 0;
-    }
+    for (i = 1; i < n; i++) if (!isalnum((unsigned char)name[i])) return 0;
+    /* disallow collisions */
+    if (find_instruction(name) != NULL) return 0;
+    if (is_register_name(name)) return 0;
+    if (name[0]=='.' && is_directive_tok(name)) return 0;
     return 1;
 }
 
@@ -86,42 +104,51 @@ static int macro_index_by_name(const char *name) {
     return -1;
 }
 
-/* Build "<base>.amx": strip the last extension (if any) before adding ".amx" */
+/* derive "<src>.am" */
 static void make_out_path(const char *src, char *out, size_t out_sz) {
-    const char *base = src, *p = src, *dot = NULL, *slash = NULL;
-    size_t len;
+    size_t i, n, last_dot = (size_t)-1;
 
     if (out_sz == 0) return;
 
-    /* find last path separator and last dot after it */
-    while (*p) { if (*p=='/' || *p=='\\') slash = p; p++; }
-    if (slash) base = slash + 1;
-    for (p = base; *p; ++p) if (*p == '.') dot = p;
+    /* copy src (truncate if needed) */
+    n = strlen(src);
+    if (n >= out_sz) n = out_sz - 1;
+    for (i = 0; i < n; ++i) {
+        out[i] = src[i];
+        if (src[i] == '.') last_dot = i;
+    }
+    out[n] = '\0';
 
-    /* length of stem without extension */
-    len = dot ? (size_t)(dot - base) : strlen(base);
-    if (len >= out_sz) len = out_sz - 1;
+    /* replace/append extension with .am */
+    if (last_dot != (size_t)-1) {
+        out[last_dot] = '\0';
+    }
+    if (strlen(out) + 3 + 1 < out_sz) strcat(out, ".am");
+}
 
-    memcpy(out, base, len);
-    out[len] = '\0';
-
-    /* append ".amx" if room */
-    if (strlen(out) + 4 < out_sz) strcat(out, ".amx");
+/* Enforce 80-char (logical) line length */
+static void check_line_length(const char *line, int line_no, ErrorList *errors) {
+    size_t raw_len = strcspn(line, "\r\n");
+    if (raw_len > MAX_LINE_LENGTH) {
+        add_error(errors, line_no, "line too long (> 80 chars)");
+    }
 }
 
 /* -------- parsing & expansion -------- */
 
 /* Pass 1: collect macros into g_macros; report duplicates, nested, missing end */
 static int collect_macros(FILE *fp, ErrorList *errors) {
-    char line[MAX_LINE_LEN + 4];
+    char line[BUF_LINE_LEN];
     int line_no = 0;
     int in_macro = 0;
     Macro *cur = NULL;
 
     while (fgets(line, sizeof(line), fp)) {
-        char work[MAX_LINE_LEN + 4];
+        char work[BUF_LINE_LEN];
         char *p;
         line_no++;
+
+        check_line_length(line, line_no, errors);
 
         strcpy(work, line);
         trim_inplace(work);
@@ -132,17 +159,14 @@ static int collect_macros(FILE *fp, ErrorList *errors) {
             /* check for "mcro NAME" */
             if (strncmp(p, "mcro", 4) == 0 && (p[4] == '\0' || isspace((unsigned char)p[4]))) {
                 char name[MAX_MACRO_NAME] = {0};
+                size_t i2 = 0;
                 p = lstrip(p + 4);
                 if (*p == '\0') { add_error(errors, line_no, "mcro: missing name"); return 0; }
-                /* read name token */
-                {
-                    size_t i = 0;
-                    while (p[i] && !isspace((unsigned char)p[i]) && i < MAX_MACRO_NAME-1) {
-                        name[i] = p[i]; i++;
-                    }
-                    name[i] = '\0';
+                while (p[i2] && !isspace((unsigned char)p[i2]) && i2 < MAX_MACRO_NAME-1) {
+                    name[i2] = p[i2]; i2++;
                 }
-                if (!is_valid_name(name)) { add_error(errors, line_no, "mcro: invalid name"); return 0; }
+                name[i2] = '\0';
+                if (!is_valid_macro_name(name)) { add_error(errors, line_no, "mcro: invalid or reserved name"); return 0; }
                 if (macro_index_by_name(name) >= 0) { add_error(errors, line_no, "mcro: duplicate name"); return 0; }
                 if (g_macro_count >= MAX_MACROS) { add_error(errors, line_no, "too many macros"); return 0; }
 
@@ -176,13 +200,17 @@ static int collect_macros(FILE *fp, ErrorList *errors) {
 }
 
 /* Expand: copy src->out, skipping macro definitions; replace lines that equal macro name */
-static int expand_to(FILE *fp_in, FILE *fp_out) {
-    char line[MAX_LINE_LEN + 4];
+static int expand_to(FILE *fp_in, FILE *fp_out, ErrorList *errors) {
+    char line[BUF_LINE_LEN];
+    int line_no = 0;
 
     while (fgets(line, sizeof(line), fp_in)) {
-        char work[MAX_LINE_LEN + 4];
+        char work[BUF_LINE_LEN];
         char *p;
         int i;
+
+        line_no++;
+        check_line_length(line, line_no, errors);
 
         strcpy(work, line);
         trim_inplace(work);
@@ -193,6 +221,8 @@ static int expand_to(FILE *fp_in, FILE *fp_out) {
             if (strncmp(p, "mcro", 4) == 0 && (p[4] == '\0' || isspace((unsigned char)p[4]))) {
                 /* skip until endmcro / mcroend */
                 while (fgets(line, sizeof(line), fp_in)) {
+                    line_no++;
+                    check_line_length(line, line_no, errors);
                     strcpy(work, line);
                     trim_inplace(work);
                     if (strcmp(work, "endmcro") == 0 || strcmp(work, "mcroend") == 0) break;
@@ -247,32 +277,34 @@ int pre_assemble(const char *src_path,
     /* pass 1: collect macros */
     if (!collect_macros(fin, errors)) { fclose(fin); macros_reset(); return 0; }
 
-    /* rewind and expand to .amx */
+    /* rewind and expand to .am */
     pos = ftell(fin);
-    (void)pos; /* silence unused in strict builds */
+    (void)pos; /* silence unused */
     rewind(fin);
 
     if (out_path && out_path_sz > 0) {
         make_out_path(src_path, out_path, out_path_sz);
-    } else {
-        char dummy[8]; (void)dummy;
     }
 
     {
         char pathbuf[512];
         const char *target;
 
-        if (out_path && out_path_sz > 0) {
+        if (out_path && out_path_sz > 0 && out_path[0]) {
             target = out_path;
         } else {
-            strcpy(pathbuf, "out.amx");
+            strcpy(pathbuf, "out.am");
             target = pathbuf;
+            if (out_path && out_path_sz > 0) {
+                strncpy(out_path, pathbuf, out_path_sz-1);
+                out_path[out_path_sz-1] = '\0';
+            }
         }
 
         fout = fopen(target, "w");
         if (!fout) { fclose(fin); macros_reset(); add_error(errors, 0, "pre_assemble: cannot open output"); return 0; }
 
-        if (!expand_to(fin, fout)) {
+        if (!expand_to(fin, fout, errors)) {
             fclose(fin); fclose(fout); macros_reset();
             add_error(errors, 0, "pre_assemble: expand failed");
             return 0;
