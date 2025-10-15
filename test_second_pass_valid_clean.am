@@ -1,0 +1,27 @@
+; Simple valid instructions (no directives, no labels except where needed)
+
+MAIN:   mov  r3, r5
+        add  #5, r2
+        sub  r1, r4
+        lea  EXT_LABEL, r6
+        clr  r7
+        not  r5
+        inc  r0
+        dec  r2
+        jmp  EXT_LABEL
+        bne  MAIN
+        red  r4
+        prn  #10
+        jsr  EXT_LABEL
+        rts
+        stop
+
+EXT_LABEL: mov  r2, r3
+           add  r1, r7
+           sub  r0, r1
+           lea  MAIN, r2
+           clr  r4
+           prn  r5
+           rts
+           stop
+

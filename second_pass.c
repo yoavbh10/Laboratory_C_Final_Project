@@ -44,7 +44,7 @@ int second_pass(const char *filename, Symbol *symbols, MemoryImage *mem, ErrorLi
         else {
             if (!encode_instruction(p, symbols, mem, errors, line_num)) {
                 char msg[64];
-                snprintf(msg, sizeof(msg), "Instruction encoding failed at line %d", line_num);
+                sprintf(msg, "Instruction encoding failed at line %d", line_num);
                 add_error(errors, line_num, msg);
             }
         }
