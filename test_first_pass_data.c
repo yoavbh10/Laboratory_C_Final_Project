@@ -6,12 +6,11 @@ int main(void)
     Symbol *symbols = NULL;
     MemoryImage mem;
 	ErrorList errors;
-	init_error_list(&errors); /* <-- this initializes the struct properly */
-
+	init_error_list(&errors);
 
     init_memory_image(&mem);
 
-    if (!first_pass("test_macros.am", &symbols, &mem, &errors))
+    if (!first_pass("test_data_string.am", &symbols, &mem, &errors))
     {
         print_and_clear_errors(&errors);
         return 1;

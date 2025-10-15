@@ -5,17 +5,11 @@
 #include "memory_image.h"
 #include "error_list.h"
 
-/* 
- * Performs the first pass of the assembler
- * 
- * filename: expanded source file (.am)
- * symtab:   pointer to symbol table head pointer
- * mem:      memory image
- * errors:   error list
- * 
- * Returns 0 if completed (even if errors exist), non-zero if file cannot be read.
- */
-int first_pass(const char *filename, Symbol **symtab, MemoryImage *mem, ErrorList *errors);
+#define MAX_LINE_LENGTH 80
+#define MAX_LABEL_LEN   32
+
+int first_pass(const char *filename, Symbol **symtab,
+               MemoryImage *mem, ErrorList *errors);
 
 #endif
 

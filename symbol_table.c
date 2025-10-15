@@ -3,62 +3,49 @@
 #include <string.h>
 #include "symbol_table.h"
 
-int add_symbol(Symbol **head, const char *name, int address, SymbolType type) {
-    Symbol *curr = *head;
-
-    /* Check for duplicate name */
-    while (curr) {
-        if (strcmp(curr->name, name) == 0) {
-            return -1; /* already exists */
-        }
-        curr = curr->next;
-    }
-
-    /* Allocate new node */
-    curr = (Symbol*)malloc(sizeof(Symbol));
-    if (!curr) return -1;
-
-    strncpy(curr->name, name, MAX_LABEL_LENGTH);
-    curr->name[MAX_LABEL_LENGTH] = '\0'; /* ensure null termination */
-    curr->address = address;
-    curr->type = type;
-    curr->next = *head;
-
-    *head = curr;
-    return 0;
+void add_symbol(Symbol **head, const char *name, int address, SymbolType type) {
+    Symbol *new_symbol = (Symbol *)malloc(sizeof(Symbol));
+    strncpy(new_symbol->name, name, MAX_LABEL_LEN - 1);
+    new_symbol->name[MAX_LABEL_LEN - 1] = '\0';
+    new_symbol->address = address;
+    new_symbol->type = type;
+    new_symbol->next = *head;
+    *head = new_symbol;
 }
 
-Symbol* find_symbol(Symbol *head, const char *name) {
+Symbol *find_symbol(Symbol *head, const char *name) {
     while (head) {
-        if (strcmp(head->name, name) == 0) return head;
+        if (strcmp(head->name, name) == 0)
+            return head;
         head = head->next;
     }
     return NULL;
 }
 
-void update_data_symbols(Symbol *head, int offset) {
-    while (head) {
-        if (head->type == SYMBOL_DATA) {
-            head->address += offset;
-        }
-        head = head->next;
-    }
-}
-
 void free_symbol_table(Symbol *head) {
-    Symbol *temp;
     while (head) {
-        temp = head;
+        Symbol *temp = head;
         head = head->next;
         free(temp);
     }
 }
 
 void print_symbol_table(Symbol *head) {
-    const char *type_names[] = {"CODE", "DATA", "EXTERNAL", "ENTRY"};
     while (head) {
+        const char *type_str = (head->type == SYMBOL_CODE) ? "CODE" :
+                               (head->type == SYMBOL_DATA) ? "DATA" : "EXTERNAL";
         printf("Symbol: %-32s Address: %4d  Type: %s\n",
-               head->name, head->address, type_names[head->type]);
+               head->name, head->address, type_str);
+        head = head->next;
+    }
+}
+
+/* NEW: adjust all data symbols to be offset by final IC */
+void adjust_data_symbol_addresses(Symbol *head, int ic_offset) {
+    while (head) {
+        if (head->type == SYMBOL_DATA) {
+            head->address += ic_offset;
+        }
         head = head->next;
     }
 }

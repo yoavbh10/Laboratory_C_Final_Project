@@ -3,40 +3,97 @@
 #include <string.h>
 #include <ctype.h>
 #include "first_pass.h"
-#include "instruction_set.h"
 
-/* Helpers remain the same */
+static int extract_label(const char *line, char *label)
+{
+    const char *colon = strchr(line, ':');
+    int len;
+    if (!colon)
+        return 0;
+    len = (int)(colon - line);
+    if (len <= 0 || len >= MAX_LABEL_LEN)
+        return -1;
+    strncpy(label, line, len);
+    label[len] = '\0';
+    return 1;
+}
 
-int first_pass(const char *filename, Symbol **symtab, MemoryImage *mem, ErrorList *errors) {
-    FILE *fp;
-    char line[120];
+static void handle_data(const char *params, MemoryImage *mem)
+{
+	char *copy = (char*)malloc(strlen(params) + 1);
+	char *token = strtok(copy, ",");
+	
+	if (copy) strcpy(copy, params);
+    while (token)
+    {
+        while (isspace((unsigned char)*token))
+            token++;
+        add_data_word(mem, atoi(token));
+        token = strtok(NULL, ",");
+    }
+    free(copy);
+}
+
+static void handle_string(const char *param, MemoryImage *mem)
+{
+    const char *p = strchr(param, '"');
+    const char *q = strrchr(param, '"');
+    if (!p || !q || p == q)
+        return;
+    for (p++; p < q; p++)
+        add_data_word(mem, (int)(unsigned char)(*p));
+    add_data_word(mem, 0);
+}
+
+int first_pass(const char *filename, Symbol **symtab,
+               MemoryImage *mem, ErrorList *errors)
+{
+    FILE *fp = fopen(filename, "r");
+    char line[MAX_LINE_LENGTH];
     int line_num = 0;
-    char label[32];
 
-    fp = fopen(filename, "r");
-    if (!fp) {
-        printf("Error: Cannot open file %s\n", filename);
-        return 1;
+    if (!fp)
+    {
+        add_error(errors, 0, "Cannot open source file");
+        return 0;
     }
 
-    while (fgets(line, sizeof(line), fp)) {
+    while (fgets(line, sizeof(line), fp))
+    {
+        char *p = line;
+        char label[MAX_LABEL_LEN] = {0};
         line_num++;
-        /* (skip comments/blank) */
-        if (line[0] == ';' || line[0] == '\n')
+
+        while (isspace((unsigned char)*p))
+            p++;
+
+        if (*p == ';' || *p == '\0' || *p == '\n')
             continue;
 
-        /* Label check (very primitive) */
-        if (strchr(line, ':')) {
-            sscanf(line, "%31[^:]:", label);
-            if (add_symbol(symtab, label, mem->IC, 0) != 0)
-                add_error(errors, line_num, "Duplicate label definition");
+        if (extract_label(p, label) == 1)
+        {
+            add_symbol(symtab, label, mem->IC, SYMBOL_CODE);
+            p = strchr(p, ':') + 1;
         }
 
-        /* Stub: treat as an instruction placeholder */
-        add_code_word(mem, 0);
+        if (strncmp(p, ".data", 5) == 0)
+        {
+            handle_data(p + 5, mem);
+        }
+        else if (strncmp(p, ".string", 7) == 0)
+        {
+            handle_string(p + 7, mem);
+        }
+        else
+        {
+            /* stub instruction encoding */
+            add_code_word(mem, 0);
+            add_code_word(mem, 0);
+            add_code_word(mem, 0);
+        }
     }
 
     fclose(fp);
-    return 0;
+    return 1;
 }
 

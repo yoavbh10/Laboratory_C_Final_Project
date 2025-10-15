@@ -40,6 +40,13 @@ test_first_pass: test_first_pass.c first_pass.c \
 	    error_list.c instruction_set.c \
 	    -o test_first_pass
 
+test_first_pass_data: test_first_pass_data.c first_pass.c symbol_table.c memory_image.c \
+                      error_list.c instruction_set.c
+	gcc -ansi -pedantic -Wall -Wextra \
+	    test_first_pass_data.c first_pass.c symbol_table.c memory_image.c \
+	    error_list.c instruction_set.c \
+	    -o test_first_pass_data
+
 clean:
 	rm -f assembler test_pre test_symbol_table *.o *.am
 
