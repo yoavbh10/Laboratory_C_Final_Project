@@ -1,0 +1,29 @@
+; Example program - valid for new encoder logic
+.entry MAIN
+.extern EXT_LABEL
+
+MAIN:   mov  r1, EXT_LABEL
+        add  r2, r3
+        sub  #5, r4
+        lea  EXT_LABEL, r6
+        not  r7
+        clr  r5
+        inc  r0
+        dec  r2
+        jmp  EXT_LABEL
+        bne  MAIN
+        red  r4
+        prn  #10
+        jsr  EXT_LABEL
+        rts
+        stop
+
+EXT_LABEL: mov  r3, r1
+           add  r4, r2
+           sub  r0, r7
+           lea  MAIN, r6
+           clr  r1
+           prn  r5
+           rts
+           stop
+
