@@ -1,6 +1,10 @@
 /* first_pass.c — ANSI C (C90)
    Pass 1: build symbol table, data image, and compute code size (IC).
-   Addressing: #immediate, direct LABEL, register r0..r7 (no matrix).
+   Now supports .data, .string, .mat directives.
+   Addressing supported in sizing/validation: #immediate, LABEL (direct),
+   register r0..r7, and (for sizing/validation only) matrix operands are
+   validated in the encoder during pass-2; here we only ensure operand
+   counts and label binding so IC stays consistent.
 */
 #include <stdio.h>
 #include <string.h>
@@ -35,7 +39,7 @@ static void strip_comment(char *s) { for(;*s;++s){ if(*s==';'){*s='\0'; break;} 
 static int  is_blank(const char *s){ while(*s){ if(!isspace((unsigned char)*s)) return 0; s++; } return 1; }
 static char *xstrdup(const char *s){ size_t n=strlen(s)+1; char *p=(char*)malloc(n); if(p) memcpy(p,s,n); return p; }
 
-/* split by commas into at most 2 operands; trim; drop empties; never read past end */
+/* split by commas into at most N parts; trim; drop empties; never read past end */
 static int split_commas_inplace(char *s, char *parts[], int max_parts) {
     int count = 0;
     char *q = s;
@@ -60,7 +64,7 @@ static int split_commas_inplace(char *s, char *parts[], int max_parts) {
 
         if (*start != '\0') {
             parts[count++] = start;
-            if (count == 2) break;   /* at most 2 operands */
+            if (count == max_parts) break;
         }
     }
     return count;
@@ -103,7 +107,9 @@ static int parse_string_literal(const char *s, unsigned char **out, size_t *out_
 /* ---------- label/name helpers ---------- */
 static int is_register_name(const char *s){ return s && s[0]=='r' && s[1]>='0' && s[1]<='7' && s[2]=='\0'; }
 static int is_directive_tok(const char *tok){
-    return strcmp(tok,".data")==0 || strcmp(tok,".string")==0 || strcmp(tok,".extern")==0 || strcmp(tok,".entry")==0;
+    return strcmp(tok,".data")==0 || strcmp(tok,".string")==0 ||
+           strcmp(tok,".extern")==0 || strcmp(tok,".entry")==0 ||
+           strcmp(tok,".mat")==0; /* added .mat */
 }
 static int is_valid_label_name(const char *name){
     size_t i, n = strlen(name);
@@ -130,10 +136,10 @@ static int take_leading_label(char **p, char out_label[MAX_LABEL_LEN]){
     return 1;
 }
 
-/* ---------- directives ---------- */
+/* ---------- directives: .data / .string ---------- */
 static void handle_data(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
                         const char *label_opt, char *args){
-    char *parts[2];
+    char *parts[512];
     int n, i;
 
     if (label_opt && *label_opt) {
@@ -147,7 +153,7 @@ static void handle_data(MemoryImage *mem, ErrorList *errors, Symbol **symtab, in
 
     if (!args || is_blank(args)) { add_err(errors,line,".data: missing numbers"); return; }
 
-    n = split_commas_inplace(args, parts, 512); /* 512 ignored; function clamps to 2 */
+    n = split_commas_inplace(args, parts, 512);
     if (n == 0) { add_err(errors, line, ".data: no numbers"); return; }
 
     for (i=0;i<n;i++) {
@@ -180,6 +186,7 @@ static void handle_string(MemoryImage *mem, ErrorList *errors, Symbol **symtab, 
     free(bytes);
 }
 
+/* ---------- .extern / .entry ---------- */
 static void handle_extern(Symbol **symtab, ErrorList *errors, int line, char *args){
     char name[MAX_LABEL_LEN]={0};
     Symbol *existing;
@@ -209,12 +216,85 @@ static void handle_entry(Symbol **symtab, ErrorList *errors, int line, char *arg
     if (sym) sym->is_entry = 1;
 }
 
-/* ---------- addressing & sizing ---------- */
+/* ---------- .mat support ---------- */
+/* parse [rows][cols], returns 1 on success; *after points past the second ] */
+static int parse_mat_dims(char *p, int *rows, int *cols, char **after) {
+    char *q = p;
+    long r, c;
+    char *e;
+
+    q = lstrip(q);
+    if (*q != '[') return 0;
+    q++;
+    r = strtol(q, &e, 10);
+    if (e == q || *e != ']') return 0;
+    q = e + 1;
+
+    q = lstrip(q);
+    if (*q != '[') return 0;
+    q++;
+    c = strtol(q, &e, 10);
+    if (e == q || *e != ']') return 0;
+    q = e + 1;
+
+    if (r <= 0 || c <= 0) return 0;
+    *rows = (int)r; *cols = (int)c;
+    if (after) *after = q;
+    return 1;
+}
+
+static void handle_mat(MemoryImage *mem, ErrorList *errors, Symbol **symtab, int line,
+                       const char *label_opt, char *args)
+{
+    int rows=0, cols=0, total, i, n=0;
+    char *p = args;
+    char *list = NULL;
+    char *parts[512];
+
+    if (label_opt && *label_opt) {
+        Symbol *ex = find_symbol(*symtab, label_opt);
+        if (ex) {
+            if (ex->is_extern) add_err(errors,line,"label '%s' cannot redefine extern",label_opt);
+            else if (ex->address != 0) add_err(errors,line,"duplicate label '%s'",label_opt);
+            else { ex->address = mem->DC; ex->type = SYMBOL_DATA; }
+        } else add_symbol(symtab, label_opt, mem->DC, SYMBOL_DATA);
+    }
+
+    if (!parse_mat_dims(p, &rows, &cols, &p)) { add_err(errors,line,".mat: expected [rows][cols]"); return; }
+    total = rows * cols;
+
+    /* optional initializer list after dims */
+    p = lstrip(p);
+    if (*p) {
+        list = xstrdup(p);
+        if (!list) { add_err(errors,line,"out of memory"); return; }
+        n = split_commas_inplace(list, parts, 512);
+    }
+
+    for (i=0;i<total;i++) {
+        if (i < n) {
+            char *tok = lstrip(parts[i]);
+            char *endp = NULL;
+            long v = strtol(tok, &endp, 10);
+            if (endp == tok || *lstrip(endp) != '\0') {
+                add_err(errors,line,".mat: invalid integer '%s'", tok);
+                v = 0;
+            }
+            add_data_word(mem, (int)v);
+        } else {
+            add_data_word(mem, 0);
+        }
+    }
+
+    if (list) free(list);
+}
+
+/* ---------- addressing & sizing for instructions ---------- */
 typedef enum {
     AM_INVALID  = -1,
     AM_IMM      = ADDR_IMMEDIATE, /* 0 */
     AM_DIR      = ADDR_DIRECT,    /* 1 */
-    AM_REG      = ADDR_REGISTER   /* 3, no matrix (2) */
+    AM_REG      = ADDR_REGISTER   /* 3 (no explicit matrix mode parsed here) */
 } AddrMode;
 
 static AddrMode parse_operand(const char *op, char label_out[MAX_LABEL_LEN], long *imm_out){
@@ -229,7 +309,13 @@ static AddrMode parse_operand(const char *op, char label_out[MAX_LABEL_LEN], lon
     }
     if (is_register_name(op)) return AM_REG;
 
-    if (strchr(op,'[') || strchr(op,']')) return AM_INVALID;
+    /* Matrix text is validated/encoded in pass-2; here treat 'LABEL[...][...]' as a label
+       for sizing purposes in pass-1 (adds one extra word like direct). */
+    if (strchr(op,'[') && strchr(op,']')) {
+        /* Take prefix up to '[' as a candidate label; don't need it here. */
+        return AM_DIR;
+    }
+
     if (is_valid_label_name(op)) {
         if (label_out) { strncpy(label_out, op, MAX_LABEL_LEN-1); label_out[MAX_LABEL_LEN-1]='\0'; }
         return AM_DIR;
@@ -391,6 +477,8 @@ int first_pass(const char *filename, Symbol **symtab, MemoryImage *mem, ErrorLis
                 handle_data(mem,errors,symtab,line_no,has_label?label:NULL,cursor);
             else if (strcmp(tok,".string")==0)
                 handle_string(mem,errors,symtab,line_no,has_label?label:NULL,cursor);
+            else if (strcmp(tok,".mat")==0)
+                handle_mat(mem,errors,symtab,line_no,has_label?label:NULL,cursor);
             else if (strcmp(tok,".extern")==0) {
                 if (has_label) add_err(errors,line_no,"label before .extern is ignored");
                 handle_extern(symtab,errors,line_no,cursor);
