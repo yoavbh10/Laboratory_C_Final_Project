@@ -23,47 +23,36 @@ int second_pass(const char *filename, Symbol *symbols, MemoryImage *mem, ErrorLi
         char *p = line;
         line_num++;
 
-        /* Skip leading whitespace */
         while (isspace((unsigned char)*p)) p++;
         if (*p == ';' || *p == '\0')
-            continue; /* Skip comments or empty lines */
+            continue;
 
-        /* Handle label definitions (LABEL:) */
-        if (strchr(p, ':')) {
-            char *colon = strchr(p, ':');
-            if (colon) {
-                p = colon + 1;
-                while (isspace((unsigned char)*p)) p++;
+        if (strncmp(p, ".entry", 6) == 0) {
+            char label[MAX_LABEL_LEN];
+            if (sscanf(p + 6, "%s", label) == 1) {
+                Symbol *sym = find_symbol(symbols, label);
+                if (sym)
+                    sym->is_entry = 1;
+                else
+                    add_error(errors, line_num, "Entry symbol not found");
             }
         }
-
-        /* Skip directives starting with '.' */
-        if (*p == '.') {
-            if (strncmp(p, ".entry", 6) == 0) {
-                char label[MAX_LABEL_LEN];
-                if (sscanf(p + 6, "%s", label) == 1) {
-                    Symbol *sym = find_symbol(symbols, label);
-                    if (sym)
-                        sym->is_entry = 1; /* mark as entry */
-                    else
-                        add_error(errors, line_num, "Entry symbol not found");
-                }
-            }
-            /* .extern already handled in first pass, others are skipped */
+        else if (strncmp(p, ".extern", 7) == 0) {
+            /* already handled in first pass */
             continue;
         }
-
         else {
-            /* Instruction encoding */
             if (!encode_instruction(p, symbols, mem, errors, line_num)) {
-                add_error(errors, line_num, "Instruction encoding failed");
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Instruction encoding failed at line %d", line_num);
+                add_error(errors, line_num, msg);
             }
         }
     }
 
     fclose(fp);
 
-    /* Output files */
+    /* Write output files */
     write_entry_file(filename, symbols);
     write_extern_file(filename, symbols);
     write_object_file(filename, mem);

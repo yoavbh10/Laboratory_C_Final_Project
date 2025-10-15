@@ -5,10 +5,16 @@
 #include "memory_image.h"
 #include "error_list.h"
 
-#define MAX_LINE_LENGTH 256  /* unified with second_pass.h */
+#define MAX_TOKENS 10
+#define MAX_LINE_LENGTH 256  /* match second_pass.h for consistency */
 
-/* Encode a single instruction line into machine code */
-int encode_instruction(const char *line, Symbol *symbols, MemoryImage *mem, ErrorList *errors, int line_num);
+/* Encodes one instruction line into memory image.
+   Returns 1 on success, 0 on error. */
+int encode_instruction(const char *line,
+                       Symbol *symbols,
+                       MemoryImage *mem,
+                       ErrorList *errors,
+                       int line_num);
 
 #endif
 
