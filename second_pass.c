@@ -2,19 +2,37 @@
 #include <string.h>
 
 #include "second_pass.h"
+#include "first_pass.h"
 #include "instruction_encoder.h"
 #include "symbol_table.h"
 #include "memory_image.h"
 #include "error_list.h"
 
-int second_pass(const char *filename, Symbol *symbols,
-                MemoryImage *mem, ErrorList *errors) {
-    FILE *fp;
-    char line[256];
-    int line_num = 0;
+#define LOGICAL_BASE 100
+enum { ARE_A = 0, ARE_E = 1, ARE_R = 2 };
 
-    int i;              /* for fixup resolution loop */
-    char msg[128];      /* for error formatting */
+/* Pack a value into [9..2] with ARE in [1..0] (ANSI C) */
+static int pack_value_word_fixup(int value, int are){
+    return ((value & 0xFF) << 2) | (are & 0x3);
+}
+
+int second_pass(const char *filename, Symbol **symbols,
+                MemoryImage *mem, ErrorList *errors)
+{
+    FILE *fp;
+    char line[MAX_LINE_LENGTH+4];
+    int line_num = 0;
+    int i;
+    char msg[128];
+
+    /* reset IC/DC before running pass 1 (so code starts at 100, not 200) */
+    init_memory_image(mem);
+
+    /* Run pass 1 first to populate *symbols and data image */
+    if (!first_pass(filename, symbols, mem, errors)) {
+        add_error(errors, 0, "First pass failed");
+        return 0;
+    }
 
     fp = fopen(filename, "r");
     if (!fp) {
@@ -22,27 +40,30 @@ int second_pass(const char *filename, Symbol *symbols,
         return 0;
     }
 
+    /* Encode code from scratch in pass 2 */
+    mem->IC = 0;
+    mem->fixup_count = 0;
+    memset(mem->code, 0, sizeof(mem->code));
+
     while (fgets(line, sizeof(line), fp)) {
         line_num++;
-        /* Encode each line; encoder will push opcode and create fixups for labels */
-	    encode_instruction(line, symbols, mem, errors, line_num);
+        encode_instruction(line, *symbols, mem, errors, line_num);
     }
-
     fclose(fp);
 
-    /* Resolve recorded fixups: patch code words with real addresses */
+    /* Resolve fixups */
     for (i = 0; i < mem->fixup_count; i++) {
         Fixup *fx = &mem->fixups[i];
-        Symbol *sym = find_symbol(symbols, fx->label);
+        Symbol *sym = find_symbol(*symbols, fx->label);
         if (!sym) {
             sprintf(msg, "Undefined label: %s", fx->label);
             add_error(errors, fx->line, msg);
         } else {
-            int idx = fx->address - 100; /* convert absolute address to code[] index */
+            int idx = fx->address - LOGICAL_BASE;
             if (idx >= 0 && idx < MAX_CODE_SIZE) {
-                mem->code[idx] = sym->address;
+                int are = sym->is_extern ? ARE_E : ARE_R;
+                mem->code[idx] = pack_value_word_fixup(sym->address, are);
             } else {
-                /* Out-of-range patch location; report but continue */
                 sprintf(msg, "Patch address out of range for label: %s", fx->label);
                 add_error(errors, fx->line, msg);
             }

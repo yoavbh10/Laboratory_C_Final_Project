@@ -5,11 +5,15 @@
 #include "memory_image.h"
 #include "error_list.h"
 
-#define MAX_TOKENS 10
-#define MAX_LINE_LENGTH 256  /* match second_pass.h for consistency */
+#ifndef MAX_LINE_LENGTH
+#define MAX_LINE_LENGTH 80
+#endif
 
-/* Encodes one instruction line into memory image.
-   Returns 1 on success, 0 on error. */
+#define MAX_TOKENS 10
+
+/* Encodes one instruction line into the memory image.
+   Returns 1 on success, 0 on error.
+   Safe to call on non-instruction lines (returns 1 and does nothing). */
 int encode_instruction(const char *line,
                        Symbol *symbols,
                        MemoryImage *mem,

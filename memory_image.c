@@ -2,24 +2,15 @@
 #include <stdio.h>
 #include <string.h>
 
-void init_memory_image(MemoryImage *mem)
-{
+void init_memory_image(MemoryImage *mem) {
     int i;
-    for (i = 0; i < MAX_CODE_SIZE; i++)
-        mem->code[i] = 0;
-    for (i = 0; i < MAX_DATA_SIZE; i++)
-        mem->data[i] = 0;
-
-    mem->IC = 100; /* starting code address */
+    for (i=0;i<MAX_CODE_SIZE;i++) mem->code[i]=0;
+    for (i=0;i<MAX_DATA_SIZE;i++) mem->data[i]=0;
+    mem->IC = 0;          /* <-- MUST be 0 (word count), NOT 100 */
     mem->DC = 0;
-
     mem->fixup_count = 0;
-    for (i = 0; i < MAX_FIXUPS; i++) {
-        mem->fixups[i].address = 0;
-        mem->fixups[i].label[0] = '\0';
-        mem->fixups[i].line = 0;
-    }
 }
+
 
 void add_code_word(MemoryImage *mem, int word)
 {
