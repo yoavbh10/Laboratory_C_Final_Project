@@ -1,0 +1,34 @@
+name: C Project Build and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build and Test Assembler
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential
+
+    - name: Build project
+      run: make
+
+    - name: Run tests (if applicable)
+      run: |
+        echo "Running tests..."
+        # Example test command
+        # ./assembler tests/sample.as || exit 1
+
+    - name: Upload build artifacts (optional)
+      uses: actions/upload-artifact@v4
+      with:
+        name: assembler-binaries
+        path: assembler
