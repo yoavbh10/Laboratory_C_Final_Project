@@ -1,196 +1,153 @@
-\# Assembler Project (ANSI C)
+## 🧠 Laboratory C Final Project — Two-Pass Assembler (ANSI C)
 
+---
 
+### 📘 Overview
 
-\## Overview
+This project is a **two-pass assembler** implemented in **strict ANSI C** as part of a university laboratory course.
+It translates a custom assembly language into machine code, producing several output files (`.am`, `.ob`, `.ent`, `.ext`).
+The program is modular, efficient, and well-documented, following the C89 standard.
 
-This project implements a \*\*two-pass assembler\*\* written in \*\*ANSI C\*\*.  
+---
 
-It translates a simplified assembly language into machine code, while handling macros, symbol tables, and memory images.
+### ⚙️ Features
 
+✅ **Pre-Assembler phase**
 
+* Expands user-defined macros and outputs an `.am` file
+* Handles nested and repeated macro definitions gracefully
 
-This repository contains the \*\*first version\*\* of the project:  
+✅ **First Pass**
 
-`000\_Project\_pre\_assembler\_and\_first\_pass`,  
+* Parses `.am` files to build symbol and instruction tables
+* Detects syntax and semantic errors
+* Calculates memory addresses for symbols and data
 
-which includes the \*\*pre-assembler\*\* and \*\*first pass\*\* modules.
+✅ **Second Pass**
 
+* Resolves symbol addresses and generates machine code
+* Creates output files:
 
+  * `.ob` — object (machine code)
+  * `.ent` — entries
+  * `.ext` — externals
 
-\## Project Structure
+✅ **Error Handling**
 
-assembler/
+* Comprehensive error detection across all stages
+* Each module reports clear, descriptive messages
 
-├── error\_list.c / error\_list.h
+✅ **Modular Design**
 
-├── errors.c / errors.h
+* Code divided across multiple C source and header files
+* Clean separation between logic, memory management, and error reporting
 
-├── first\_pass.c / first\_pass.h
+---
 
-├── instruction\_set.h
+### 📁 Project Structure
 
-├── macro\_table.c / macro\_table.h
-
-├── memory\_image.c / memory\_image.h
-
-├── pre\_assembler.c / pre\_assembler.h
-
-├── symbol\_table.c / symbol\_table.h
-
-├── utils.c / utils.h
-
-├── main.c
-
+```
+Laboratory_C_Final_Project/
+├── src/
+│   ├── main.c
+│   ├── pre_assembler.c
+│   ├── first_pass.c
+│   ├── memory_image.c
+│   ├── symbol_table.c
+│   ├── macro_table.c
+│   ├── error_list.c
+│   ├── errors.c
+│   ├── utils.c
+│   └── ...
+├── include/
+│   ├── pre_assembler.h
+│   ├── first_pass.h
+│   ├── memory_image.h
+│   ├── symbol_table.h
+│   ├── macro_table.h
+│   ├── error_list.h
+│   ├── errors.h
+│   ├── instruction_set.h
+│   └── utils.h
+├── tests/
+│   ├── sample.as
+│   ├── test.as
+│   ├── test.am
+│   └── test_first_pass.c
 ├── makefile
+├── README.md
+└── LICENSE
+```
 
-├── sample.as / test.as / test.am
+---
 
-└── test\_first\_pass.c
+### 🧩 Compilation & Execution
 
-
-
-\## Compilation
-
-You can build the assembler using:
+#### 🧱 Build the assembler
 
 ```bash
-
 make
+```
 
-This produces an executable called assembler.
+This compiles all source files and creates an executable named:
 
+```
+assembler
+```
 
+#### ▶️ Run the assembler
 
-\## Usage
+```bash
+./assembler filename.as
+```
 
+The assembler will automatically generate:
 
+* `filename.am` (after macro expansion)
+* `filename.ob` (object code)
+* `filename.ent` (entries)
+* `filename.ext` (externals)
 
-Run the assembler by providing an assembly source file (without the .as extension):
+---
 
-./assembler test
+### 🧪 Example Usage
 
+```bash
+./assembler sample.as
+```
 
+**Output:**
 
-It will generate:
+```
+Assembling file: sample.as
+Pre-assembly completed → sample.am
+First pass completed successfully
+Second pass completed successfully
+Output files generated:
+  sample.ob
+  sample.ent
+  sample.ext
+```
 
-.am — after macro expansion
+---
 
-.ob — object file (machine code)
+### 💡 Implementation Notes
 
-.ent — entries
+* Written in **strict ANSI C (C89)** — portable across Unix and Windows.
+* Robust **error management** and **memory handling**.
+* All logic tested using custom `.as` files.
+* Designed with maintainability and modularity in mind.
 
-.ext — externals
+---
 
+### 🧑‍💻 Author
 
+**Yoavbh10**
+Developed as part of the **Laboratory in C** final course project.
 
-\## Features
+---
 
-Full macro preprocessing
+### 📜 License
 
-Symbol and label table construction
-
-First-pass error detection
-
-Instruction parsing and addressing modes
-
-Modular design (ANSI C compliant)
-
-Makefile-based compilation
-
-
-
-\## Author
-
-
-
-Developed by Yoavbh10(C) 2025
-
-
-
-\## MIT License
-
-
-
-Copyright (c) 2025 Yoavbh10
-
-
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-
-of this software and associated documentation files (the "Software"), to deal
-
-in the Software without restriction, including without limitation the rights
-
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-
-copies of the Software, and to permit persons to whom the Software is
-
-furnished to do so, subject to the following conditions:
-
-
-
-The above copyright notice and this permission notice shall be included in all
-
-copies or substantial portions of the Software.
-
-
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-
-SOFTWARE.
-
-
-
-README – Assembler Project (MAMAN 14)
-
-Compilation
-Use the provided makefile:
-make clean
-make assembler
-This produces the assembler executable.
-
-Running
-Run the assembler on .as source files:
-./assembler file.as
-If the file is valid, the assembler outputs:
-file.ob – machine code (base-4 encoding).
-file.ent – entry symbols.
-file.ext – external symbols.
-If errors are found, no output files are created.
-
-Test Files
-ps.as – basic example with code, data, and string.
-example_valid_1.as – multiple .data/.string, instruction coverage.
-example_valid_2.as – branching, matrix addressing, .entry/.extern.
-example_valid_3.as – broad sweep across instructions and directives.
-example_invalid_1.as – too many operands, illegal register.
-example_invalid_2.as – duplicate labels, .entry/.extern conflict.
-
-Code Structure
-main.c – entry point.
-pre_assembler.c – macro expansion.
-first_pass.c – builds symbol table, encodes preliminaries.
-second_pass.c – resolves symbols, finalizes code, writes outputs.
-symbol_table.c / memory_image.c – abstractions for labels and memory.
-instruction_encoder.c – encodes machine instructions.
-error_list.c – collects and reports all errors.
-output_files.c – generates .ob, .ent, .ext.
-
-Assumptions & Limitations
-Line length limited to 80 chars.
-No nested macros; macros must end with mcroend.
-Only standard C libraries used.
-Linker/loader stages are not implemented (scope limited to assembler).
-
-
+This project is released under the **MIT License**.
+See the [`LICENSE`](LICENSE) file for more details.
